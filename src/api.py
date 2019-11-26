@@ -12,6 +12,33 @@ from whoosh.fields import Schema, TEXT, ID
 import sys
 from whoosh.qparser import QueryParser
 from whoosh import scoring
+import logging
+import subprocess
+import subprocess, os, platform
+
+
+def setup_logging(log_level=logging.INFO, log_file=None):
+    class InfoFilter(logging.Filter):
+        def filter(self, rec):
+            return rec.levelno in (logging.DEBUG, logging.INFO, logging.WARNING)
+
+    h1 = logging.StreamHandler(sys.stdout)
+    h1.setLevel(logging.DEBUG)
+    h1.addFilter(InfoFilter())
+    h2 = logging.StreamHandler(sys.stderr)
+    h2.setLevel(logging.ERROR)
+
+    handlers = [h1, h2]
+    kwargs = {"format": "%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
+              "datefmt": '%Y-%m-%d:%H:%M:%S', "level": log_level}
+
+    if log_file:
+        h1 = logging.FileHandler(filename=log_file)
+        h1.setLevel(logging.DEBUG)
+        handlers = [h1]
+
+    kwargs["handlers"] = handlers
+    logging.basicConfig(**kwargs)
 
 
 def sha256_sum(file_path):
@@ -66,15 +93,16 @@ class TextractProcessor(FileProcessor):
         self.index = index  # type: FileIndex
 
     def process(self, full_path, basename, file_name, ext, dir_name):
+        logger = logging.getLogger(__name__)
         try:
             if self.index.is_indexed(full_path):
-                print("skipping already indexed file {}".format(full_path))
+                logger.info("skipping already indexed file {}".format(full_path))
                 return
 
             text = textract.process(full_path)
             self.text_processor.process(text.decode('unicode_escape'), full_path, basename, file_name, ext, dir_name)
         except Exception as e:
-            print("error processing file {}: {}".format(full_path, str(e)))
+            logger.warning("error processing file {}: {}".format(full_path, str(e)))
 
 
 class WhooshIndexer(TextProcessor):
@@ -88,9 +116,11 @@ class WhooshIndexer(TextProcessor):
         self.file_num = 0
 
     def process(self, text, full_path, basename, file_name, ext, dir_name):
+
+        logger = logging.getLogger(__name__)
         # sha256 = sha256_sum(full_path)
         self.assert_index_writer()
-        print("indexing file {}".format(full_path))
+        logger.info("indexing file {}".format(full_path))
         self.ix_writer.add_document(title=basename, path=full_path, file_id=full_path, content=text, textdata=text,
                                     dir_name=dir_name)
         self.file_num = self.file_num + 1
@@ -99,12 +129,14 @@ class WhooshIndexer(TextProcessor):
             self.ix_writer = None
 
     def assert_index_writer(self):
+
+        logger = logging.getLogger(__name__)
         if self.ix_writer is not None:
             return
 
         if self.rebuild and os.path.exists(self.index_path) and self.index_cleared == False and exists_in(
                 self.index_path):
-            print("deleting index at {}".format(self.index_path))
+            logger.info("deleting index at {}".format(self.index_path))
             shutil.rmtree(self.index_path)
             self.index_cleared = True
 
@@ -162,14 +194,42 @@ class DirOcr:
 
         dir_parser.run()
 
+    def interactive_search(self, index_path, num_docs):
+        while True:
+            query_str = input("query_string: ")
+            if query_str:
+                self.search(index_path, query_str, num_docs)
+            action = input("what next? proceed (default), quit (1): ")
+            if action:
+                if int(action) == 1:
+                    print("bye bye")
+                    break
+
+    def open_file(self, full_path):
+        if platform.system() == 'Darwin':  # macOS
+            subprocess.call(('open', full_path))
+        elif platform.system() == 'Windows':  # Windows
+            os.startfile(full_path)
+        else:  # linux variants
+            subprocess.call(('xdg-open', full_path))
+
     def search(self, index_path, query_str, num_docs):
         ix = open_dir(index_path)
 
         with ix.searcher(weighting=scoring.Frequency) as searcher:
             query = QueryParser("content", ix.schema).parse(query_str)
             results = searcher.search(query, limit=num_docs)
-            if len(results) > 0:
-                for i in range(0, len(results)):
-                    print(str(results[i].score), results[i]['title'], results[i]['dir_name'])
-            else:
-                print("NO RESULTS!!!")
+            for result in results:
+                print(str(result.score), result['title'], result['dir_name'])
+                action = input("what next? next file (default), open file and next file (1), quit(2): ")
+                if action:
+                    if int(action) == 1:
+                        try:
+                            print("opening file {}".format(result['path']))
+                            self.open_file(result['path'])
+                        except Exception as e:
+                            print("an error occured {}".format(str(e)))
+                    elif int(action) == 2:
+                        return
+            if len(results) == 0:
+                print("!!!No Results!!!")
