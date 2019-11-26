@@ -7,7 +7,7 @@ from PIL import Image
 from pytesseract import pytesseract
 import textract
 import hashlib
-from whoosh.index import create_in, open_dir
+from whoosh.index import create_in, open_dir, exists_in
 from whoosh.fields import Schema, TEXT, ID
 import sys
 from whoosh.qparser import QueryParser
@@ -36,6 +36,12 @@ class TextProcessor:
         pass
 
 
+class FileIndex:
+    @abc.abstractmethod
+    def is_indexed(self, full_path):
+        return False
+
+
 class DirParser:
     def __init__(self, directory, file_processor, extensions=[]):
         self.directory = directory  # type: Optional[str]
@@ -55,32 +61,20 @@ class DirParser:
 
 
 class TextractProcessor(FileProcessor):
-    def __init__(self, text_processor):
+    def __init__(self, text_processor, index):
         self.text_processor = text_processor  # type: TextProcessor
+        self.index = index  # type: FileIndex
 
     def process(self, full_path, basename, file_name, ext, dir_name):
         try:
+            if self.index.is_indexed(full_path):
+                print("skipping already indexed file {}".format(full_path))
+                return
+
             text = textract.process(full_path)
             self.text_processor.process(text.decode('unicode_escape'), full_path, basename, file_name, ext, dir_name)
         except Exception as e:
             print("error processing file {}: {}".format(full_path, str(e)))
-
-
-class TesseractProcessor(FileProcessor):
-    def __init__(self, text_processor):
-        self.text_processor = text_processor  # type: TextProcessor
-
-    def process(self, full_path, basename, file_name, ext, dir_name):
-        if ext == "pdf":
-            images = convert_from_path(full_path)
-        else:
-            images = [Image.open(full_path)]
-
-        text = ""
-        for image in images:
-            text = text + pytesseract.image_to_string(image)
-        print(text)
-        self.text_processor.process(text, full_path, basename, file_name, ext, dir_name)
 
 
 class WhooshIndexer(TextProcessor):
@@ -94,11 +88,11 @@ class WhooshIndexer(TextProcessor):
         self.file_num = 0
 
     def process(self, text, full_path, basename, file_name, ext, dir_name):
-        sha256 = sha256_sum(full_path)
+        # sha256 = sha256_sum(full_path)
         self.assert_index_writer()
-        print("indexing file {} with sha256 {}".format(full_path, sha256))
-        self.ix_writer.add_document(title=basename, path=full_path, file_id=sha256, content=text, textdata=text,
-                             dir_name=dir_name)
+        print("indexing file {}".format(full_path))
+        self.ix_writer.add_document(title=basename, path=full_path, file_id=full_path, content=text, textdata=text,
+                                    dir_name=dir_name)
         self.file_num = self.file_num + 1
         if self.commit_after_num_files is not None and self.file_num % self.commit_after_num_files == 0:
             self.ix_writer.commit()
@@ -108,7 +102,8 @@ class WhooshIndexer(TextProcessor):
         if self.ix_writer is not None:
             return
 
-        if self.rebuild and os.path.exists(self.index_path) and self.index_cleared == False:
+        if self.rebuild and os.path.exists(self.index_path) and self.index_cleared == False and exists_in(
+                self.index_path):
             print("deleting index at {}".format(self.index_path))
             shutil.rmtree(self.index_path)
             self.index_cleared = True
@@ -127,17 +122,41 @@ class WhooshIndexer(TextProcessor):
             self.ix_writer.commit()
 
 
+class WooshIndex(FileIndex):
+    def __init__(self, index_path):
+        self.index_path = index_path
+        # state
+        self.indexed_paths = None
+
+    def is_indexed(self, full_path):
+        self.assert_indexed_paths()
+        return full_path in self.indexed_paths
+
+    def assert_indexed_paths(self):
+        if self.indexed_paths is not None:
+            return
+
+        self.indexed_paths = set()
+
+        if exists_in(self.index_path) == False:
+            return
+
+        ix = open_dir(self.index_path)
+        self.indexed_paths = set()
+        with ix.searcher() as searcher:
+            for fields in searcher.all_stored_fields():
+                indexed_path = fields['path']
+                self.indexed_paths.add(indexed_path)
+
+
 class DirOcr:
 
-    def index(self, directory, index_path, rebuild, text_extract_library):
+    def index(self, directory, index_path, rebuild):
         whoosh_indexer = WhooshIndexer(index_path, rebuild)
+        whoosh_index = WooshIndex(index_path)
 
-        if text_extract_library == "tesseract":
-            file_processor = TesseractProcessor(whoosh_indexer)
-            extensions = ["png", "jpg", "jpeg", "pdf"]
-        else:
-            file_processor = TextractProcessor(whoosh_indexer)
-            extensions = []
+        file_processor = TextractProcessor(whoosh_indexer, whoosh_index)
+        extensions = []
 
         dir_parser = DirParser(directory, file_processor, extensions)
 
