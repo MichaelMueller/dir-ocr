@@ -13,6 +13,7 @@ import sys
 from whoosh.qparser import QueryParser
 from whoosh import scoring
 
+
 def sha256_sum(file_path):
     h = hashlib.sha256()
     b = bytearray(128 * 1024)
@@ -25,13 +26,13 @@ def sha256_sum(file_path):
 
 class FileProcessor:
     @abc.abstractmethod
-    def process(self, full_path, basename, file_name, ext):
+    def process(self, full_path, basename, file_name, ext, dir_name):
         pass
 
 
 class TextProcessor:
     @abc.abstractmethod
-    def process(self, text, full_path, basename, file_name, ext):
+    def process(self, text, full_path, basename, file_name, ext, dir_name):
         pass
 
 
@@ -50,27 +51,26 @@ class DirParser:
                     continue
                 path = os.path.join(root, basename)
 
-                self.file_processor.process(path, basename, file_name, ext)
+                self.file_processor.process(path, basename, file_name, ext, root)
 
 
 class TextractProcessor(FileProcessor):
     def __init__(self, text_processor):
         self.text_processor = text_processor  # type: TextProcessor
 
-    def process(self, full_path, basename, file_name, ext):
+    def process(self, full_path, basename, file_name, ext, dir_name):
         try:
             text = textract.process(full_path)
-            self.text_processor.process(text.decode('unicode_escape'), full_path, basename, file_name, ext)
+            self.text_processor.process(text.decode('unicode_escape'), full_path, basename, file_name, ext, dir_name)
         except Exception as e:
             print("error processing file {}: {}".format(full_path, str(e)))
-
 
 
 class TesseractProcessor(FileProcessor):
     def __init__(self, text_processor):
         self.text_processor = text_processor  # type: TextProcessor
 
-    def process(self, full_path, basename, file_name, ext):
+    def process(self, full_path, basename, file_name, ext, dir_name):
         if ext == "pdf":
             images = convert_from_path(full_path)
         else:
@@ -80,40 +80,52 @@ class TesseractProcessor(FileProcessor):
         for image in images:
             text = text + pytesseract.image_to_string(image)
         print(text)
-        self.text_processor.process(text, full_path, basename, file_name, ext)
+        self.text_processor.process(text, full_path, basename, file_name, ext, dir_name)
 
 
 class WhooshIndexer(TextProcessor):
-    def __init__(self, index_path, rebuild):
+    def __init__(self, index_path, rebuild, commit_after_num_files=50):
         self.index_path = index_path
         self.rebuild = rebuild
-        self.ix = None
+        self.commit_after_num_files = commit_after_num_files
+        # state
+        self.ix_writer = None
+        self.index_cleared = False
+        self.file_num = 0
 
-    def process(self, text, full_path, basename, file_name, ext):
+    def process(self, text, full_path, basename, file_name, ext, dir_name):
         sha256 = sha256_sum(full_path)
         self.assert_index_writer()
         print("indexing file {} with sha256 {}".format(full_path, sha256))
-        self.ix.add_document(title=basename, path=full_path, file_id=sha256, content=text, textdata=text)
+        self.ix_writer.add_document(title=basename, path=full_path, file_id=sha256, content=text, textdata=text,
+                             dir_name=dir_name)
+        self.file_num = self.file_num + 1
+        if self.commit_after_num_files is not None and self.file_num % self.commit_after_num_files == 0:
+            self.ix_writer.commit()
+            self.ix_writer = None
 
     def assert_index_writer(self):
-        if self.ix is not None:
+        if self.ix_writer is not None:
             return
 
-        if self.rebuild and os.path.exists(self.index_path):
+        if self.rebuild and os.path.exists(self.index_path) and self.index_cleared == False:
             print("deleting index at {}".format(self.index_path))
             shutil.rmtree(self.index_path)
+            self.index_cleared = True
 
         if os.path.exists(self.index_path):
-            self.ix = open_dir(self.index_path).writer()
+            self.ix_writer = open_dir(self.index_path).writer()
         else:
             os.makedirs(self.index_path, 0o777, True)
-            schema = Schema(title=TEXT(stored=True), path=TEXT(stored=True), file_id=ID(stored=True), content=TEXT, textdata=TEXT(stored=True))
+            schema = Schema(title=TEXT(stored=True), path=TEXT(stored=True), dir_name=TEXT(stored=True),
+                            file_id=ID(stored=True), content=TEXT, textdata=TEXT(stored=True))
             ix = create_in(self.index_path, schema)
-            self.ix = ix.writer()
+            self.ix_writer = ix.writer()
 
     def __del__(self):
-        if self.ix:
-            self.ix.commit()
+        if self.ix_writer:
+            self.ix_writer.commit()
+
 
 class DirOcr:
 
@@ -139,6 +151,6 @@ class DirOcr:
             results = searcher.search(query, limit=num_docs)
             if len(results) > 0:
                 for i in range(0, len(results)):
-                    print(str(results[i].score), results[i]['title'], results[i]['path'])
+                    print(str(results[i].score), results[i]['title'], results[i]['dir_name'])
             else:
                 print("NO RESULTS!!!")

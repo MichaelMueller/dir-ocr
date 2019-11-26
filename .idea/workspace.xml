@@ -2,17 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="77fc0d89-5a3c-497d-81cf-b9c0c8eb5c6d" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/src/dir_ocr_index.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/dir_ocr_search.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/api.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/api.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/old/DataStructures.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/old/Functors.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/old/api2.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/old/api_mray.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/old/mray_gesture_control.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/old/sandbox.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/old/shell.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dir_ocr_search.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/dir_ocr_search.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -24,16 +15,16 @@
     <splitter split-orientation="horizontal" split-proportion="0.5">
       <split-first>
         <leaf>
-          <file pinned="false" current-in-tab="false">
+          <file pinned="false" current-in-tab="true">
             <entry file="file://$PROJECT_DIR$/src/dir_ocr_search.py">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="255">
-                  <caret line="16" lean-forward="true" selection-start-line="16" selection-end-line="16" />
+                <state relative-caret-position="102">
+                  <caret line="7" column="53" selection-start-line="7" selection-start-column="53" selection-end-line="7" selection-end-column="53" />
                 </state>
               </provider>
             </entry>
           </file>
-          <file pinned="false" current-in-tab="true">
+          <file pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/src/dir_ocr_index.py">
               <provider selected="true" editor-type-id="text-editor">
                 <state relative-caret-position="187">
@@ -57,8 +48,8 @@
           <file pinned="false" current-in-tab="true">
             <entry file="file://$PROJECT_DIR$/src/api.py">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="237">
-                  <caret line="81" column="18" selection-start-line="81" selection-start-column="18" selection-end-line="81" selection-end-column="18" />
+                <state relative-caret-position="-164">
+                  <caret line="121" column="27" selection-start-line="121" selection-start-column="27" selection-end-line="121" selection-end-column="27" />
                   <folding>
                     <element signature="e#0#10#0" expanded="true" />
                   </folding>
@@ -83,6 +74,7 @@
     </findStrings>
     <replaceStrings>
       <replace>index_path</replace>
+      <replace>self.ix_writer</replace>
     </replaceStrings>
   </component>
   <component name="Git.Settings">
@@ -98,9 +90,9 @@
         <option value="$PROJECT_DIR$/src/old/sandbox.py" />
         <option value="$PROJECT_DIR$/src/dir_ocr.py" />
         <option value="$PROJECT_DIR$/src/dir_ocr_create_database.py" />
-        <option value="$PROJECT_DIR$/src/dir_ocr_search.py" />
         <option value="$PROJECT_DIR$/src/dir_ocr_index.py" />
         <option value="$PROJECT_DIR$/src/api.py" />
+        <option value="$PROJECT_DIR$/src/dir_ocr_search.py" />
       </list>
     </option>
   </component>
@@ -173,7 +165,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/dir_ocr_index.py" />
-      <option name="PARAMETERS" value="&quot;C:\Users\mueller\Desktop\mbits imaging GmbH\Management - Dokumente\Belegablage\neu_unsortiert_nicht_hochgeladen&quot; &quot;C:\Users\mueller\Desktop\idx&quot; --rebuild" />
+      <option name="PARAMETERS" value="&quot;C:\Users\mueller\Desktop\mbits imaging GmbH\Management - Dokumente\Belegablage&quot; &quot;C:\Users\mueller\Desktop\idx&quot; --rebuild" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
       <option name="MODULE_MODE" value="false" />
@@ -310,10 +302,13 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/src/dir_ocr_search.py">
+    <entry file="file://$PROJECT_DIR$/src/api.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="255">
-          <caret line="16" lean-forward="true" selection-start-line="16" selection-end-line="16" />
+        <state relative-caret-position="-164">
+          <caret line="121" column="27" selection-start-line="121" selection-start-column="27" selection-end-line="121" selection-end-column="27" />
+          <folding>
+            <element signature="e#0#10#0" expanded="true" />
+          </folding>
         </state>
       </provider>
     </entry>
@@ -327,13 +322,10 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/src/api.py">
+    <entry file="file://$PROJECT_DIR$/src/dir_ocr_search.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="237">
-          <caret line="81" column="18" selection-start-line="81" selection-start-column="18" selection-end-line="81" selection-end-column="18" />
-          <folding>
-            <element signature="e#0#10#0" expanded="true" />
-          </folding>
+        <state relative-caret-position="102">
+          <caret line="7" column="53" selection-start-line="7" selection-start-column="53" selection-end-line="7" selection-end-column="53" />
         </state>
       </provider>
     </entry>

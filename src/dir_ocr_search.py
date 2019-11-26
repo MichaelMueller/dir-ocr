@@ -5,7 +5,7 @@ import api
 parser = argparse.ArgumentParser(description='dir_ocr_search')
 parser.add_argument('index_path', type=str, help='the index path')
 parser.add_argument('--query_string', type=str, default=None, help='the query string')
-parser.add_argument('--num_docs', type=int, default=10, help='the maximum number of docs returned')
+parser.add_argument('--num_docs', type=int, default=3, help='the maximum number of docs returned')
 args = parser.parse_args()
 
 dir_ocr = api.DirOcr()
