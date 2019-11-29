@@ -18,7 +18,9 @@ dependencies:
   - freetype=2.10.0=h563cfd7_1
   - gettext=0.19.8.1=hb01d8f6_1002
   - glib=2.58.3=py37hc0c2ac7_1002
-  - icu=64.2=he025d50_1
+  - hdf5=1.8.20=hac2f561_1
+  - icc_rt=2019.0.0=h0cc432a_1
+  - icu=58.2=ha66f8fd_1
   - importlib_metadata=0.23=py37_0
   - intel-openmp=2019.4=245
   - jpeg=9c=hfa6e2cd_1001
@@ -33,7 +35,7 @@ dependencies:
   - libiconv=1.15=hfa6e2cd_1005
   - liblapack=3.8.0=14_mkl
   - liblapacke=3.8.0=14_mkl
-  - libopencv=4.1.2=py37_2
+  - libopencv=3.4.2=h20b85fd_0
   - libpng=1.6.37=h7602738_0
   - libssh2=1.8.2=h642c060_2
   - libtiff=4.1.0=h21b02b4_1
@@ -52,7 +54,7 @@ dependencies:
   - msys2-conda-epoch=20160418=1
   - numpy=1.17.3=py37hc71023c_0
   - olefile=0.46=py_0
-  - opencv=4.1.2=py37_2
+  - opencv=3.4.2=py37h40b0b35_0
   - openjpeg=2.3.1=hb24c2e3_1
   - openssl=1.1.1=he774522_0
   - packaging=19.2=py_0
@@ -65,16 +67,18 @@ dependencies:
   - poppler=0.82.0=h1707e21_0
   - poppler-data=0.4.9=1
   - py=1.8.0=py_0
-  - py-opencv=4.1.2=py37h5ca1d4c_2
+  - py-opencv=3.4.2=py37hc319ecb_0
   - pycodestyle=2.5.0=py_0
   - pyflakes=2.1.1=py_0
   - pyparsing=2.4.5=py_0
   - pypdf2=1.26.0=py_2
+  - pyqt=5.9.2=py37h6538335_2
   - pytesseract=0.3.0=py_0
   - pytest=5.0.1=py37_0
   - python=3.7.4=h5263a28_0
-  - qt=5.12.5=h7ef1ec2_0
+  - qt=5.9.7=vc14h73c81de_0
   - setuptools=42.0.1=py37_0
+  - sip=4.19.8=py37h6538335_0
   - sqlite=3.29.0=he774522_0
   - tesseract=4.1.0=h82d57dc_1
   - tk=8.6.10=hfa6e2cd_0
