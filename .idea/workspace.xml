@@ -3,9 +3,6 @@
   <component name="ChangeListManager">
     <list default="true" id="77fc0d89-5a3c-497d-81cf-b9c0c8eb5c6d" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/api.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/api.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dir_ocr_index.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/dir_ocr_index.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dir_ocr_search.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/dir_ocr_search.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -20,7 +17,7 @@
           <file pinned="false" current-in-tab="true">
             <entry file="file://$PROJECT_DIR$/src/dir_ocr_search.py">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="153">
+                <state relative-caret-position="144">
                   <caret line="8" column="56" selection-start-line="8" selection-start-column="56" selection-end-line="8" selection-end-column="56" />
                   <folding>
                     <element signature="e#0#15#0" expanded="true" />
@@ -32,7 +29,7 @@
           <file pinned="false" current-in-tab="false">
             <entry file="file://$PROJECT_DIR$/src/dir_ocr_index.py">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="17">
+                <state relative-caret-position="18">
                   <caret line="1" column="10" selection-start-line="1" selection-start-column="10" selection-end-line="2" selection-end-column="14" />
                 </state>
               </provider>
@@ -50,8 +47,8 @@
           <file pinned="false" current-in-tab="true">
             <entry file="file://$PROJECT_DIR$/src/api.py">
               <provider selected="true" editor-type-id="text-editor">
-                <state relative-caret-position="561">
-                  <caret line="182" selection-start-line="182" selection-end-line="182" />
+                <state relative-caret-position="-501">
+                  <caret line="162" column="36" selection-start-line="162" selection-start-column="36" selection-end-line="162" selection-end-column="36" />
                   <folding>
                     <element signature="e#0#10#0" expanded="true" />
                   </folding>
@@ -114,6 +111,7 @@
       <foldersAlwaysOnTop value="true" />
     </navigator>
     <panes>
+      <pane id="Scope" />
       <pane id="ProjectPane">
         <subPane>
           <expand>
@@ -130,7 +128,6 @@
           <select />
         </subPane>
       </pane>
-      <pane id="Scope" />
     </panes>
   </component>
   <component name="PropertiesComponent">
@@ -269,32 +266,32 @@
     <entry file="file://$PROJECT_DIR$/src/old/mray_gesture_control.py" />
     <entry file="file://$PROJECT_DIR$/src/old/DataStructures.py" />
     <entry file="file://$PROJECT_DIR$/src/old/api2.py" />
-    <entry file="file://$PROJECT_DIR$/src/dir_ocr_search.py">
+    <entry file="file://$PROJECT_DIR$/conda_environment_export.yml">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/api.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="153">
-          <caret line="8" column="56" selection-start-line="8" selection-start-column="56" selection-end-line="8" selection-end-column="56" />
+        <state relative-caret-position="-501">
+          <caret line="162" column="36" selection-start-line="162" selection-start-column="36" selection-end-line="162" selection-end-column="36" />
           <folding>
-            <element signature="e#0#15#0" expanded="true" />
+            <element signature="e#0#10#0" expanded="true" />
           </folding>
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/src/dir_ocr_index.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="17">
+        <state relative-caret-position="18">
           <caret line="1" column="10" selection-start-line="1" selection-start-column="10" selection-end-line="2" selection-end-column="14" />
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/conda_environment_export.yml">
-      <provider selected="true" editor-type-id="text-editor" />
-    </entry>
-    <entry file="file://$PROJECT_DIR$/src/api.py">
+    <entry file="file://$PROJECT_DIR$/src/dir_ocr_search.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="561">
-          <caret line="182" selection-start-line="182" selection-end-line="182" />
+        <state relative-caret-position="144">
+          <caret line="8" column="56" selection-start-line="8" selection-start-column="56" selection-end-line="8" selection-end-column="56" />
           <folding>
-            <element signature="e#0#10#0" expanded="true" />
+            <element signature="e#0#15#0" expanded="true" />
           </folding>
         </state>
       </provider>
