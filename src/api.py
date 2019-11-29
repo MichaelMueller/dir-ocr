@@ -1,20 +1,23 @@
 import abc
-import os
-import shutil
-from typing import List, Optional
-from pdf2image import convert_from_path
-from PIL import Image
-from pytesseract import pytesseract
-import textract
 import hashlib
-from whoosh.index import create_in, open_dir, exists_in
-from whoosh.fields import Schema, TEXT, ID
-import sys
-from whoosh.qparser import QueryParser
-from whoosh import scoring
 import logging
+import os
+import platform
+import shutil
 import subprocess
-import subprocess, os, platform
+import sys
+from typing import List, Optional
+
+import textract
+from PIL import Image
+from PyQt5.QtCore import pyqtSlot
+from PyQt5.QtWidgets import QApplication, QWidget, QTableWidget, QTableWidgetItem, QVBoxLayout
+from pdf2image import convert_from_path
+from pytesseract import pytesseract
+from whoosh import scoring
+from whoosh.fields import Schema, TEXT, ID
+from whoosh.index import create_in, open_dir, exists_in
+from whoosh.qparser import QueryParser
 
 
 def setup_logging(log_level=logging.INFO, log_file=None):
@@ -49,6 +52,14 @@ def sha256_sum(file_path):
         for n in iter(lambda: f.readinto(mv), 0):
             h.update(mv[:n])
     return h.hexdigest()
+
+
+def get_int(str):
+    try:
+        value = int(str)
+        return value
+    except ValueError:
+        return str
 
 
 class FileProcessor:
@@ -101,6 +112,30 @@ class TextractProcessor(FileProcessor):
 
             text = textract.process(full_path)
             self.text_processor.process(text.decode('unicode_escape'), full_path, basename, file_name, ext, dir_name)
+        except Exception as e:
+            logger.warning("error processing file {}: {}".format(full_path, str(e)))
+
+
+class TesseractProcessor(FileProcessor):
+    def __init__(self, text_processor, index):
+        self.text_processor = text_processor  # type: TextProcessor
+        self.index = index  # type: FileIndex
+
+    def process(self, full_path, basename, file_name, ext, dir_name):
+        logger = logging.getLogger(__name__)
+        try:
+            if self.index.is_indexed(full_path):
+                logger.info("skipping already indexed file {}".format(full_path))
+                return
+
+            if ext == "pdf":
+                images = convert_from_path(full_path)
+            else:
+                images = [Image.open(full_path)]
+
+            text = ""
+            for image in images:
+                text = text + pytesseract.image_to_string(image)
         except Exception as e:
             logger.warning("error processing file {}: {}".format(full_path, str(e)))
 
@@ -181,6 +216,56 @@ class WooshIndex(FileIndex):
                 self.indexed_paths.add(indexed_path)
 
 
+class App(QWidget):
+
+    def __init__(self):
+        super().__init__()
+        self.title = 'PyQt5 table - pythonspot.com'
+        self.left = 30
+        self.top = 30
+        self.width = 300
+        self.height = 200
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle(self.title)
+        self.setGeometry(self.left, self.top, self.width, self.height)
+
+        self.createTable()
+
+        # Add box layout, add table to box layout and add box layout to widget
+        self.layout = QVBoxLayout()
+        self.layout.addWidget(self.tableWidget)
+        self.setLayout(self.layout)
+
+        # Show widget
+        self.show()
+
+    def createTable(self):
+        # Create table
+        self.tableWidget = QTableWidget()
+        self.tableWidget.setRowCount(4)
+        self.tableWidget.setColumnCount(2)
+        self.tableWidget.setItem(0, 0, QTableWidgetItem("Cell (1,1)"))
+        self.tableWidget.setItem(0, 1, QTableWidgetItem("Cell (1,2)"))
+        self.tableWidget.setItem(1, 0, QTableWidgetItem("Cell (2,1)"))
+        self.tableWidget.setItem(1, 1, QTableWidgetItem("Cell (2,2)"))
+        self.tableWidget.setItem(2, 0, QTableWidgetItem("Cell (3,1)"))
+        self.tableWidget.setItem(2, 1, QTableWidgetItem("Cell (3,2)"))
+        self.tableWidget.setItem(3, 0, QTableWidgetItem("Cell (4,1)"))
+        self.tableWidget.setItem(3, 1, QTableWidgetItem("Cell (4,2)"))
+        self.tableWidget.move(0, 0)
+
+        # table selection change
+        self.tableWidget.doubleClicked.connect(self.on_click)
+
+    @pyqtSlot()
+    def on_click(self):
+        print("\n")
+        for currentQTableWidgetItem in self.tableWidget.selectedItems():
+            print(currentQTableWidgetItem.row(), currentQTableWidgetItem.column(), currentQTableWidgetItem.text())
+
+
 class DirOcr:
 
     def index(self, directory, index_path, rebuild):
@@ -199,11 +284,6 @@ class DirOcr:
             query_str = input("query_string: ")
             if query_str:
                 self.search(index_path, query_str, num_docs)
-            action = input("what next? proceed (default), quit (1): ")
-            if action:
-                if int(action) == 1:
-                    print("bye bye")
-                    break
 
     def open_file(self, full_path):
         if platform.system() == 'Darwin':  # macOS
@@ -219,17 +299,24 @@ class DirOcr:
         with ix.searcher(weighting=scoring.Frequency) as searcher:
             query = QueryParser("content", ix.schema).parse(query_str)
             results = searcher.search(query, limit=num_docs)
-            for result in results:
-                print(str(result.score), result['title'], result['dir_name'])
-                action = input("what next? next file (default), open file and next file (1), quit(2): ")
-                if action:
-                    if int(action) == 1:
-                        try:
-                            print("opening file {}".format(result['path']))
-                            self.open_file(result['path'])
-                        except Exception as e:
-                            print("an error occured {}".format(str(e)))
-                    elif int(action) == 2:
-                        return
+
             if len(results) == 0:
                 print("!!!No Results!!!")
+            else:
+                for i, result in enumerate(results):
+                    print("{}: {} in {}".format(i + 1, result['title'], result['dir_name']))
+
+                action = get_int(input("next search (ENTER), open file (<number>), open all files (a), quit(q): "))
+                if action:
+                    if action == "a":
+                        for result in results:
+                            self.open_file(result['path'])
+                    elif isinstance(action, int) and 0 < action <= len(results):
+                        self.open_file(results[action-1]['path'])
+                    elif action == "q":
+                        return
+
+    def __call__(self):
+        app = QApplication(sys.argv)
+        ex = App()
+        sys.exit(app.exec_())
