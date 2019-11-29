@@ -216,11 +216,11 @@ class WooshIndex(FileIndex):
                 self.indexed_paths.add(indexed_path)
 
 
-class App(QWidget):
+class DirOcr(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.title = 'PyQt5 table - pythonspot.com'
+        self.title = 'DirOcr'
         self.left = 30
         self.top = 30
         self.width = 300
@@ -235,6 +235,10 @@ class App(QWidget):
 
         # Add box layout, add table to box layout and add box layout to widget
         self.layout = QVBoxLayout()
+        index_Label = QLabel(self)
+        index_label.setText('Select Index:')
+        self.index_line_edit = QLineEdit(self)
+
         self.layout.addWidget(self.tableWidget)
         self.setLayout(self.layout)
 
