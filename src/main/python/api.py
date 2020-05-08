@@ -10,6 +10,8 @@ from typing import List, Optional
 
 import textract
 from PIL import Image
+from PyQt5.QtWidgets import QWidget, QLineEdit, QPushButton, QHBoxLayout, QListWidget, QAbstractItemView, QFileDialog, \
+    QVBoxLayout, QSpinBox, QLabel
 from pdf2image import convert_from_path
 from pytesseract import pytesseract
 from whoosh import scoring
@@ -240,25 +242,115 @@ class DirOcr:
         else:  # linux variants
             subprocess.call(('xdg-open', full_path))
 
-    def search(self, index_path, query_str, num_docs):
+    def search_in_files(self, index_path, query_str, num_docs):
         ix = open_dir(index_path)
 
         with ix.searcher(weighting=scoring.Frequency) as searcher:
             query = QueryParser("content", ix.schema).parse(query_str)
             results = searcher.search(query, limit=num_docs)
+            return results
 
-            if len(results) == 0:
-                print("!!!No Results!!!")
-            else:
-                for i, result in enumerate(results):
-                    print("{}: {} in {}".format(i + 1, result['title'], result['dir_name']))
+    def search(self, index_path, query_str, num_docs):
+        results = self.search_in_files(index_path, query_str, num_docs)
 
-                action = get_int(input("next search (ENTER), open file (<number>), open all files (a), quit(q): "))
-                if action:
-                    if action == "a":
-                        for result in results:
-                            self.open_file(result['path'])
-                    elif isinstance(action, int) and 0 < action <= len(results):
-                        self.open_file(results[action-1]['path'])
-                    elif action == "q":
-                        return
+        if len(results) == 0:
+            print("!!!No Results!!!")
+        else:
+            for i, result in enumerate(results):
+                print("{}: {} in {}".format(i + 1, result['title'], result['dir_name']))
+
+            action = get_int(input("next search (ENTER), open file (<number>), open all files (a), quit(q): "))
+            if action:
+                if action == "a":
+                    for result in results:
+                        self.open_file(result['path'])
+                elif isinstance(action, int) and 0 < action <= len(results):
+                    self.open_file(results[action-1]['path'])
+                elif action == "q":
+                    return
+
+class CentralWidget(QWidget):
+    def __init__(self, parent=None):
+        QWidget.__init__(self, parent)
+
+        # the scan dir
+        self.dir_line_edit = QLineEdit()
+        change_dir_button = QPushButton('Change Scan Directory')
+        change_dir_button.clicked.connect(self.change_dir_button_clicked)
+        dir_chooser_layout = QHBoxLayout()
+        dir_chooser_layout.addWidget(self.dir_line_edit)
+        dir_chooser_layout.addWidget(change_dir_button)
+
+        # the scan_dir_action_bar_widget
+        index_button = QPushButton('Index')
+        index_button.clicked.connect(self.index_button_clicked)
+        reindex_button = QPushButton('Re-Index')
+        reindex_button.clicked.connect(self.reindex_button_clicked)
+
+        scan_dir_action_bar_layout = QHBoxLayout()
+        scan_dir_action_bar_layout.setContentsMargins(0, 0, 0, 0);
+        scan_dir_action_bar_layout.addWidget(index_button)
+        scan_dir_action_bar_layout.addWidget(reindex_button)
+        self.scan_dir_action_bar_widget = QWidget()
+        self.scan_dir_action_bar_widget.setLayout(scan_dir_action_bar_layout)
+        self.scan_dir_action_bar_widget.setEnabled(False)
+
+        # the query_dialog_widget
+        self.query_dialog_line_edit = QLineEdit()
+        qlabel = QLabel("Maximum Number of Results:")
+        qspinbox = QSpinBox()
+
+        query_dialog_search_button = QPushButton('Search')
+        query_dialog_search_button.clicked.connect(self.query_dialog_search_button_clicked)
+
+        query_dialog_layout = QHBoxLayout()
+        query_dialog_layout.setContentsMargins(0, 0, 0, 0)
+        query_dialog_layout.addWidget(self.query_dialog_line_edit)
+        query_dialog_layout.addWidget(qlabel)
+        query_dialog_layout.addWidget(qspinbox)
+        query_dialog_layout.addWidget(query_dialog_search_button)
+        self.query_dialog_widget = QWidget()
+        self.query_dialog_widget.setLayout(query_dialog_layout)
+        self.query_dialog_widget.setEnabled(False)
+
+        # the file_list
+        self.file_list = QListWidget()
+        self.file_list.setEnabled(False)
+        self.file_list.itemSelectionChanged.connect(self.file_list_item_selection_changed)
+        self.file_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+
+        # buikd widget
+        central_widget_layout = QVBoxLayout()
+        central_widget_layout.addLayout(dir_chooser_layout)
+        central_widget_layout.addWidget(self.scan_dir_action_bar_widget)
+        central_widget_layout.addWidget(self.query_dialog_widget)
+        central_widget_layout.addWidget(self.file_list)
+        self.setLayout(central_widget_layout)
+
+        #dircor
+        self.dir_ocr = DirOcr()
+
+    def change_dir_button_clicked(self):
+        self.file_list.setEnabled(False)
+        dir = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
+        if dir:
+            self.dir_line_edit.setText(dir)
+            self.scan_dir_action_bar_widget.setEnabled(True)
+        else:
+            self.dir_line_edit.setText("")
+            self.scan_dir_action_bar_widget.setEnabled(False)
+
+    def reindex_button_clicked(self):
+        pass
+
+
+    def index_button_clicked(self):
+        pass
+
+
+    def query_dialog_search_button_clicked(self):
+        pass
+
+
+    def file_list_item_selection_changed(self):
+        pass
