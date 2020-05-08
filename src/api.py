@@ -10,8 +10,6 @@ from typing import List, Optional
 
 import textract
 from PIL import Image
-from PyQt5.QtCore import pyqtSlot
-from PyQt5.QtWidgets import QApplication, QWidget, QTableWidget, QTableWidgetItem, QVBoxLayout
 from pdf2image import convert_from_path
 from pytesseract import pytesseract
 from whoosh import scoring
@@ -215,61 +213,6 @@ class WooshIndex(FileIndex):
                 indexed_path = fields['path']
                 self.indexed_paths.add(indexed_path)
 
-
-class DirOcr(QWidget):
-
-    def __init__(self):
-        super().__init__()
-        self.title = 'DirOcr'
-        self.left = 30
-        self.top = 30
-        self.width = 300
-        self.height = 200
-        self.initUI()
-
-    def initUI(self):
-        self.setWindowTitle(self.title)
-        self.setGeometry(self.left, self.top, self.width, self.height)
-
-        self.createTable()
-
-        # Add box layout, add table to box layout and add box layout to widget
-        self.layout = QVBoxLayout()
-        index_Label = QLabel(self)
-        index_label.setText('Select Index:')
-        self.index_line_edit = QLineEdit(self)
-
-        self.layout.addWidget(self.tableWidget)
-        self.setLayout(self.layout)
-
-        # Show widget
-        self.show()
-
-    def createTable(self):
-        # Create table
-        self.tableWidget = QTableWidget()
-        self.tableWidget.setRowCount(4)
-        self.tableWidget.setColumnCount(2)
-        self.tableWidget.setItem(0, 0, QTableWidgetItem("Cell (1,1)"))
-        self.tableWidget.setItem(0, 1, QTableWidgetItem("Cell (1,2)"))
-        self.tableWidget.setItem(1, 0, QTableWidgetItem("Cell (2,1)"))
-        self.tableWidget.setItem(1, 1, QTableWidgetItem("Cell (2,2)"))
-        self.tableWidget.setItem(2, 0, QTableWidgetItem("Cell (3,1)"))
-        self.tableWidget.setItem(2, 1, QTableWidgetItem("Cell (3,2)"))
-        self.tableWidget.setItem(3, 0, QTableWidgetItem("Cell (4,1)"))
-        self.tableWidget.setItem(3, 1, QTableWidgetItem("Cell (4,2)"))
-        self.tableWidget.move(0, 0)
-
-        # table selection change
-        self.tableWidget.doubleClicked.connect(self.on_click)
-
-    @pyqtSlot()
-    def on_click(self):
-        print("\n")
-        for currentQTableWidgetItem in self.tableWidget.selectedItems():
-            print(currentQTableWidgetItem.row(), currentQTableWidgetItem.column(), currentQTableWidgetItem.text())
-
-
 class DirOcr:
 
     def index(self, directory, index_path, rebuild):
@@ -277,7 +220,7 @@ class DirOcr:
         whoosh_index = WooshIndex(index_path)
 
         file_processor = TextractProcessor(whoosh_indexer, whoosh_index)
-        extensions = []
+        extensions = ["png", "jpg", "jpeg", "bmp"]
 
         dir_parser = DirParser(directory, file_processor, extensions)
 
@@ -319,8 +262,3 @@ class DirOcr:
                         self.open_file(results[action-1]['path'])
                     elif action == "q":
                         return
-
-    def __call__(self):
-        app = QApplication(sys.argv)
-        ex = App()
-        sys.exit(app.exec_())
