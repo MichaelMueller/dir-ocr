@@ -1,356 +1,399 @@
-import abc
-import hashlib
-import logging
+# WheresTheFckReceipt
+#   Indexer
+#       DirWalker
+#       FileToImageConverter
+#
 import os
-import platform
-import shutil
-import subprocess
+import sqlite3
 import sys
-from typing import List, Optional
+import abc
+import cv2
 
-import textract
-from PIL import Image
-from PyQt5.QtWidgets import QWidget, QLineEdit, QPushButton, QHBoxLayout, QListWidget, QAbstractItemView, QFileDialog, \
-    QVBoxLayout, QSpinBox, QLabel
-from pdf2image import convert_from_path
-from pytesseract import pytesseract
-from whoosh import scoring
-from whoosh.fields import Schema, TEXT, ID
-from whoosh.index import create_in, open_dir, exists_in
-from whoosh.qparser import QueryParser
+from PyQt5.QtCore import QDateTime, QStandardPaths, QFile, QFileInfo, Qt
+from fbs_runtime.application_context.PyQt5 import ApplicationContext
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QListWidget, QPushButton, QHBoxLayout, \
+    QTabWidget, QTextEdit, QApplication, QProgressBar, QFileDialog, QMessageBox, QLineEdit
 
+########### Abstract Classes
+from pytesseract import pytesseract, Output
 
-def setup_logging(log_level=logging.INFO, log_file=None):
-    class InfoFilter(logging.Filter):
-        def filter(self, rec):
-            return rec.levelno in (logging.DEBUG, logging.INFO, logging.WARNING)
-
-    h1 = logging.StreamHandler(sys.stdout)
-    h1.setLevel(logging.DEBUG)
-    h1.addFilter(InfoFilter())
-    h2 = logging.StreamHandler(sys.stderr)
-    h2.setLevel(logging.ERROR)
-
-    handlers = [h1, h2]
-    kwargs = {"format": "%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
-              "datefmt": '%Y-%m-%d:%H:%M:%S', "level": log_level}
-
-    if log_file:
-        h1 = logging.FileHandler(filename=log_file)
-        h1.setLevel(logging.DEBUG)
-        handlers = [h1]
-
-    kwargs["handlers"] = handlers
-    logging.basicConfig(**kwargs)
-
-
-def sha256_sum(file_path):
-    h = hashlib.sha256()
-    b = bytearray(128 * 1024)
-    mv = memoryview(b)
-    with open(file_path, 'rb', buffering=0) as f:
-        for n in iter(lambda: f.readinto(mv), 0):
-            h.update(mv[:n])
-    return h.hexdigest()
-
-
-def get_int(str):
-    try:
-        value = int(str)
-        return value
-    except ValueError:
-        return str
-
-
-class FileProcessor:
+class IndexerObserver:
     @abc.abstractmethod
-    def process(self, full_path, basename, file_name, ext, dir_name):
+    def status_changed(self, status, type=0):
         pass
 
-
-class TextProcessor:
     @abc.abstractmethod
-    def process(self, text, full_path, basename, file_name, ext, dir_name):
+    def location_added(self, location):
         pass
 
-
-class FileIndex:
     @abc.abstractmethod
-    def is_indexed(self, full_path):
-        return False
+    def location_removed(self, location):
+        pass
 
+    @abc.abstractmethod
+    def current_file_index_changed(self, file_index, num_files):
+        pass
 
-class DirParser:
-    def __init__(self, directory, file_processor, extensions=[]):
-        self.directory = directory  # type: Optional[str]
-        self.file_processor = file_processor  # type: FileProcessor
-        self.extensions = extensions  # type: List[Optional[str]]
+    @abc.abstractmethod
+    def indexing_finished(self, num_files):
+        pass
 
-    def run(self):
-        for root, dirs, files in os.walk(self.directory):
+########### Backend
+class Searcher:
+    def __init__(self, db):
+        self.db = db  # type: sqlite3.Connection
+
+    def search(self, query):
+        c = self.db.cursor()
+        c.execute("select images.path as path from images, texts where texts.image_id = images.id and texts.text like ?", (query,))
+        rows = c.fetchall()
+        return [i[0] for i in rows]
+
+class Indexer:
+    def __init__(self):
+        self.observer = None  # type: IndexerObserver
+        self.db = None  # type: sqlite3.Connection
+        self.extensions = ["jpg", "jpeg", "png", "bmp"]
+        self.stop_ = False
+
+    def set_observer(self, observer):
+        self.observer = observer
+
+    def get_locations(self):
+        c = self.get_db_cursor()
+        c.execute("select path from locations")
+        rows = c.fetchall()
+        return [i[0] for i in rows]
+
+    def stop(self):
+        self.stop_ = True
+
+    def check_stop(self):
+        if self.stop_:
+            self.stop_ = False
+            self.db.rollback()
+            self.observer.indexing_finished()
+            return True
+        else:
+            return False
+
+    def add_location(self, location_path):
+
+        c = self.get_db_cursor()
+        try:
+            c.execute("insert into 'locations' (path) values (?)", (location_path,))
+        except sqlite3.Error:
+            self.observer.status_changed("Aborting... the location " + location_path + " already exists.", 1)
+            return
+        location_id = c.lastrowid
+
+        self.observer.status_changed("Scanning files")
+        scan_files = []
+        for root, dirs, files in os.walk(location_path):
+            if self.check_stop():
+                return
             for basename in files:
+                if self.check_stop():
+                    return
                 file_name, ext = os.path.splitext(basename)
                 ext = ext[1:].lower()
                 if len(self.extensions) > 0 and ext not in self.extensions:
                     continue
-                path = os.path.join(root, basename)
+                path = os.path.join(root, basename).replace("\\", "/")
+                scan_files.append(path)
+        num_files = len(scan_files)
+        self.observer.status_changed("Scanning files finished. Found {} files for indexing.".format(num_files))
 
-                self.file_processor.process(path, basename, file_name, ext, root)
-
-
-class TextractProcessor(FileProcessor):
-    def __init__(self, text_processor, index):
-        self.text_processor = text_processor  # type: TextProcessor
-        self.index = index  # type: FileIndex
-
-    def process(self, full_path, basename, file_name, ext, dir_name):
-        logger = logging.getLogger(__name__)
-        try:
-            if self.index.is_indexed(full_path):
-                logger.info("skipping already indexed file {}".format(full_path))
+        for i in range(num_files):
+            if self.check_stop():
                 return
+            self.observer.current_file_index_changed(i, num_files)
+            path = scan_files[i]
+            rel_path = path.replace(location_path + "/", "")
+            try:
+                c.execute("insert into 'images' (path, location_id) values (?, ?)", (path, location_id,))
+                image_id = c.lastrowid
+                self.observer.status_changed("Extracting text from {}.".format(rel_path))
+                img = cv2.imread(path)
+                d = pytesseract.image_to_data(img, output_type=Output.DICT)
 
-            text = textract.process(full_path)
-            self.text_processor.process(text.decode('unicode_escape'), full_path, basename, file_name, ext, dir_name)
-        except Exception as e:
-            logger.warning("error processing file {}: {}".format(full_path, str(e)))
+                try:
+                    for j in range(len(d["text"])):
+                        if not d['text'][j].strip():
+                            continue
+                        c.execute(
+                            "insert into 'texts' (text, left, top, width, height, image_id) values (?, ?, ?, ?, ?, ?)",
+                            (d['text'][j], d['left'][j], d['top'][j], d['width'][j], d['height'][j], image_id))
+                except sqlite3.Error as e:
+                    self.observer.status_changed("Unknown error while storing texts in database {}.".format(str(e)), 2)
+            except sqlite3.Error:
+                self.observer.status_changed("Skipping already indexed file {}.".format(rel_path), 2)
 
+        self.db.commit()
+        self.observer.location_added(location_path)
+        self.observer.indexing_finished()
 
-class TesseractProcessor(FileProcessor):
-    def __init__(self, text_processor, index):
-        self.text_processor = text_processor  # type: TextProcessor
-        self.index = index  # type: FileIndex
-
-    def process(self, full_path, basename, file_name, ext, dir_name):
-        logger = logging.getLogger(__name__)
+    def remove_location(self, location_path):
+        c = self.get_db_cursor()
         try:
-            if self.index.is_indexed(full_path):
-                logger.info("skipping already indexed file {}".format(full_path))
-                return
-
-            if ext == "pdf":
-                images = convert_from_path(full_path)
-            else:
-                images = [Image.open(full_path)]
-
-            text = ""
-            for image in images:
-                text = text + pytesseract.image_to_string(image)
-        except Exception as e:
-            logger.warning("error processing file {}: {}".format(full_path, str(e)))
-
-
-class WhooshIndexer(TextProcessor):
-    def __init__(self, index_path, rebuild, commit_after_num_files=50):
-        self.index_path = index_path
-        self.rebuild = rebuild
-        self.commit_after_num_files = commit_after_num_files
-        # state
-        self.ix_writer = None
-        self.index_cleared = False
-        self.file_num = 0
-
-    def process(self, text, full_path, basename, file_name, ext, dir_name):
-
-        logger = logging.getLogger(__name__)
-        # sha256 = sha256_sum(full_path)
-        self.assert_index_writer()
-        logger.info("indexing file {}".format(full_path))
-        self.ix_writer.add_document(title=basename, path=full_path, file_id=full_path, content=text, textdata=text,
-                                    dir_name=dir_name)
-        self.file_num = self.file_num + 1
-        if self.commit_after_num_files is not None and self.file_num % self.commit_after_num_files == 0:
-            self.ix_writer.commit()
-            self.ix_writer = None
-
-    def assert_index_writer(self):
-
-        logger = logging.getLogger(__name__)
-        if self.ix_writer is not None:
+            c.execute("delete from 'locations' where path = ?", (location_path,))
+            self.db.commit()
+            self.observer.location_removed(location_path)
+        except sqlite3.Error:
+            self.observer.status_changed("Aborting... the location " + location_path + " cannot be deleted.", 1)
             return
-
-        if self.rebuild and os.path.exists(self.index_path) and self.index_cleared == False and exists_in(
-                self.index_path):
-            logger.info("deleting index at {}".format(self.index_path))
-            shutil.rmtree(self.index_path)
-            self.index_cleared = True
-
-        if os.path.exists(self.index_path):
-            self.ix_writer = open_dir(self.index_path).writer()
-        else:
-            os.makedirs(self.index_path, 0o777, True)
-            schema = Schema(title=TEXT(stored=True), path=TEXT(stored=True), dir_name=TEXT(stored=True),
-                            file_id=ID(stored=True), content=TEXT, textdata=TEXT(stored=True))
-            ix = create_in(self.index_path, schema)
-            self.ix_writer = ix.writer()
 
     def __del__(self):
-        if self.ix_writer:
-            self.ix_writer.commit()
+        self.close_db()
+
+    def close_db(self):
+        if self.db is not None:
+            self.db.close()
+            self.db = None
+
+    def get_db(self):
+        self.get_db_cursor()
+        return self.db
+
+    def get_db_cursor(self):
+        # database
+        db_path = QFileInfo(
+            QStandardPaths.writableLocation(QStandardPaths.DataLocation) + "/" + ApplicationContext().build_settings[
+                'app_name'] + ".sqlite3")
+        if not os.path.exists(db_path.absolutePath()):
+            os.makedirs(db_path.absolutePath())
+        init_database = not os.path.exists(db_path.absoluteFilePath())
+        self.db = sqlite3.connect(db_path)
+        c = self.db.cursor()
+        c.execute("PRAGMA foreign_keys = ON")
+        if init_database:
+            c.execute("CREATE TABLE 'locations' ( 'id' INTEGER PRIMARY KEY AUTOINCREMENT, 'path' TEXT UNIQUE )")
+            c.execute(
+                "CREATE TABLE 'images' ( 'id' INTEGER PRIMARY KEY AUTOINCREMENT, 'path' TEXT UNIQUE, 'location_id' INTEGER NOT NULL, FOREIGN KEY('location_id') REFERENCES 'locations'('id') ON DELETE CASCADE )")
+            c.execute(
+                "CREATE TABLE 'texts' ( 'id' INTEGER PRIMARY KEY AUTOINCREMENT, 'text' TEXT, 'left' INTEGER, 'top' INTEGER, 'width' INTEGER, 'height' INTEGER, 'image_id' INTEGER NOT NULL, FOREIGN KEY('image_id') REFERENCES 'images'('id') ON DELETE CASCADE )")
+            self.db.commit()
+        return c
 
 
-class WooshIndex(FileIndex):
-    def __init__(self, index_path):
-        self.index_path = index_path
-        # state
-        self.indexed_paths = None
+# Indexer
 
-    def is_indexed(self, full_path):
-        self.assert_indexed_paths()
-        return full_path in self.indexed_paths
-
-    def assert_indexed_paths(self):
-        if self.indexed_paths is not None:
-            return
-
-        self.indexed_paths = set()
-
-        if exists_in(self.index_path) == False:
-            return
-
-        ix = open_dir(self.index_path)
-        self.indexed_paths = set()
-        with ix.searcher() as searcher:
-            for fields in searcher.all_stored_fields():
-                indexed_path = fields['path']
-                self.indexed_paths.add(indexed_path)
-
-class DirOcr:
-
-    def index(self, directory, index_path, rebuild):
-        whoosh_indexer = WhooshIndexer(index_path, rebuild)
-        whoosh_index = WooshIndex(index_path)
-
-        file_processor = TextractProcessor(whoosh_indexer, whoosh_index)
-        extensions = ["png", "jpg", "jpeg", "bmp"]
-
-        dir_parser = DirParser(directory, file_processor, extensions)
-
-        dir_parser.run()
-
-    def interactive_search(self, index_path, num_docs):
-        while True:
-            query_str = input("query_string: ")
-            if query_str:
-                self.search(index_path, query_str, num_docs)
-
-    def open_file(self, full_path):
-        if platform.system() == 'Darwin':  # macOS
-            subprocess.call(('open', full_path))
-        elif platform.system() == 'Windows':  # Windows
-            os.startfile(full_path)
-        else:  # linux variants
-            subprocess.call(('xdg-open', full_path))
-
-    def search_in_files(self, index_path, query_str, num_docs):
-        ix = open_dir(index_path)
-
-        with ix.searcher(weighting=scoring.Frequency) as searcher:
-            query = QueryParser("content", ix.schema).parse(query_str)
-            results = searcher.search(query, limit=num_docs)
-            return results
-
-    def search(self, index_path, query_str, num_docs):
-        results = self.search_in_files(index_path, query_str, num_docs)
-
-        if len(results) == 0:
-            print("!!!No Results!!!")
-        else:
-            for i, result in enumerate(results):
-                print("{}: {} in {}".format(i + 1, result['title'], result['dir_name']))
-
-            action = get_int(input("next search (ENTER), open file (<number>), open all files (a), quit(q): "))
-            if action:
-                if action == "a":
-                    for result in results:
-                        self.open_file(result['path'])
-                elif isinstance(action, int) and 0 < action <= len(results):
-                    self.open_file(results[action-1]['path'])
-                elif action == "q":
-                    return
-
-class CentralWidget(QWidget):
+# Widgets
+class ConsoleWidget(QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
 
-        # the scan dir
-        self.dir_line_edit = QLineEdit()
-        change_dir_button = QPushButton('Change Scan Directory')
-        change_dir_button.clicked.connect(self.change_dir_button_clicked)
-        dir_chooser_layout = QHBoxLayout()
-        dir_chooser_layout.addWidget(self.dir_line_edit)
-        dir_chooser_layout.addWidget(change_dir_button)
+        self.text_edit = QTextEdit()
+        self.text_edit.setReadOnly(True)
+        self.text_edit.setAcceptRichText(True)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0);
+        layout.addWidget(self.text_edit)
+        self.setLayout(layout)
 
-        # the scan_dir_action_bar_widget
-        index_button = QPushButton('Index')
-        index_button.clicked.connect(self.index_button_clicked)
-        reindex_button = QPushButton('Re-Index')
-        reindex_button.clicked.connect(self.reindex_button_clicked)
+    def set_text(self, text):
+        datetime = QDateTime.currentDateTime()
+        self.text_edit.append(datetime.toString() + ", " + text)
+        QApplication.processEvents()
 
-        scan_dir_action_bar_layout = QHBoxLayout()
-        scan_dir_action_bar_layout.setContentsMargins(0, 0, 0, 0);
-        scan_dir_action_bar_layout.addWidget(index_button)
-        scan_dir_action_bar_layout.addWidget(reindex_button)
-        self.scan_dir_action_bar_widget = QWidget()
-        self.scan_dir_action_bar_widget.setLayout(scan_dir_action_bar_layout)
-        self.scan_dir_action_bar_widget.setEnabled(False)
+    def info(self, text):
+        self.set_text("INFO: " + text)
 
-        # the query_dialog_widget
-        self.query_dialog_line_edit = QLineEdit()
-        qlabel = QLabel("Maximum Number of Results:")
-        qspinbox = QSpinBox()
+    def warn(self, text):
+        self.set_text("<font color='orange'>WARN</font>: " + text)
 
-        query_dialog_search_button = QPushButton('Search')
-        query_dialog_search_button.clicked.connect(self.query_dialog_search_button_clicked)
+    def error(self, text):
+        self.set_text("<font color='red'>ERR</font>: " + text)
 
-        query_dialog_layout = QHBoxLayout()
-        query_dialog_layout.setContentsMargins(0, 0, 0, 0)
-        query_dialog_layout.addWidget(self.query_dialog_line_edit)
-        query_dialog_layout.addWidget(qlabel)
-        query_dialog_layout.addWidget(qspinbox)
-        query_dialog_layout.addWidget(query_dialog_search_button)
-        self.query_dialog_widget = QWidget()
-        self.query_dialog_widget.setLayout(query_dialog_layout)
-        self.query_dialog_widget.setEnabled(False)
+class SearcherWidget(QWidget):
+    def __init__(self, parent, searcher):
+        QWidget.__init__(self, parent)
+        self.searcher = searcher # type: Searcher
+
+        # query
+        self.query = QLineEdit()
+        search_button = QPushButton('Search')
+        search_button.clicked.connect(self.search_button_clicked)
+        query_bar_layout = QHBoxLayout()
+        query_bar_layout.addWidget(self.query)
+        query_bar_layout.addWidget(search_button)
 
         # the file_list
-        self.file_list = QListWidget()
-        self.file_list.setEnabled(False)
-        self.file_list.itemSelectionChanged.connect(self.file_list_item_selection_changed)
-        self.file_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.match_list = QListWidget()
 
-        # buikd widget
-        central_widget_layout = QVBoxLayout()
-        central_widget_layout.addLayout(dir_chooser_layout)
-        central_widget_layout.addWidget(self.scan_dir_action_bar_widget)
-        central_widget_layout.addWidget(self.query_dialog_widget)
-        central_widget_layout.addWidget(self.file_list)
-        self.setLayout(central_widget_layout)
+        # my layout
+        layout = QVBoxLayout()
+        layout.addLayout(query_bar_layout)
+        layout.addWidget(self.match_list)
+        self.setLayout(layout)
 
-        #dircor
-        self.dir_ocr = DirOcr()
+    def search_button_clicked(self):
+        matches = self.searcher.search(self.query.text())
+        self.match_list.clear()
+        for match in matches:
+            self.match_list.addItem(match)
 
-    def change_dir_button_clicked(self):
-        self.file_list.setEnabled(False)
-        dir = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
-        if dir:
-            self.dir_line_edit.setText(dir)
-            self.scan_dir_action_bar_widget.setEnabled(True)
+class IndexerWidget(QWidget, IndexerObserver):
+    def __init__(self, parent, indexer):
+        QWidget.__init__(self, parent)
+
+        # vars
+        self.indexer = indexer  # type: Indexer
+        self.indexer.set_observer(self)
+
+        ## GUI
+        # locations
+        self.locations = QListWidget()
+        self.locations.itemSelectionChanged.connect(self.locations_selection_changed)
+        for location in self.indexer.get_locations():
+            self.locations.addItem(location)
+
+        # the locations_action_bar
+        self.add_location_button = QPushButton('Add Location')
+        self.add_location_button.clicked.connect(self.add_location_button_clicked)
+        self.add_location_button.setEnabled(True)
+        self.remove_button = QPushButton('Remove')
+        self.remove_button.clicked.connect(self.remove_button_clicked)
+        self.remove_button.setEnabled(False)
+        self.reindex_button = QPushButton('Re-Index')
+        self.reindex_button.clicked.connect(self.reindex_button_clicked)
+        self.reindex_button.setEnabled(False)
+        file_list_action_bar_layout = QHBoxLayout()
+        file_list_action_bar_layout.setContentsMargins(0, 0, 0, 0);
+        file_list_action_bar_layout.addWidget(self.add_location_button)
+        file_list_action_bar_layout.addWidget(self.remove_button)
+        file_list_action_bar_layout.addWidget(self.reindex_button)
+        file_list_action_bar_widget = QWidget()
+        file_list_action_bar_widget.setLayout(file_list_action_bar_layout)
+
+        # index_status_widget
+        self.index_status_label = QLabel("")
+        self.index_progress_bar = QProgressBar()
+        self.stop_index_button = QPushButton('Stop Indexing')
+        self.stop_index_button.clicked.connect(self.stop_index_button_clicked)
+        self.stop_index_button.setEnabled(False)
+        index_status_widget_layout = QHBoxLayout()
+        index_status_widget_layout.setContentsMargins(0, 0, 0, 0)
+        index_status_widget_layout.addWidget(self.index_status_label)
+        index_status_widget_layout.addWidget(self.index_progress_bar)
+        index_status_widget_layout.addWidget(self.stop_index_button)
+        index_status_widget = QWidget()
+        index_status_widget.setLayout(index_status_widget_layout)
+
+        # index console
+        self.index_console = ConsoleWidget()
+
+        # layout
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Locations:"))
+        layout.addWidget(self.locations)
+        layout.addWidget(file_list_action_bar_widget)
+        layout.addWidget(index_status_widget)
+        layout.addWidget(self.index_console)
+        self.setLayout(layout)
+
+    def stop_index_button_clicked(self):
+        self.indexer.stop()
+
+    def locations_selection_changed(self):
+        list_items = self.locations.selectedItems()
+        if not list_items:
+            self.remove_button.setEnabled(False)
+            self.reindex_button.setEnabled(False)
         else:
-            self.dir_line_edit.setText("")
-            self.scan_dir_action_bar_widget.setEnabled(False)
+            self.remove_button.setEnabled(True)
+            self.reindex_button.setEnabled(True)
+
+    def add_location_button_clicked(self):
+        directory = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
+        if directory:
+            self.add_location_button.setEnabled(False)
+            self.locations.setEnabled(False)
+            self.stop_index_button.setEnabled(True)
+            self.remove_button.setEnabled(False)
+            self.reindex_button.setEnabled(False)
+            self.indexer.add_location(directory)
+
+    def remove_button_clicked(self):
+        answer = QMessageBox.question(self, "Remove location", "Proceed?")
+        if answer == QMessageBox.Yes:
+            selected_location = self.locations.currentItem().text()
+            self.indexer.remove_location(selected_location)
 
     def reindex_button_clicked(self):
+        answer = QMessageBox.question(self, "Re-Index location", "Proceed?")
+        if answer == QMessageBox.Yes:
+            selected_location = self.locations.currentItem().text()
+            self.indexer.remove_location(selected_location)
+            self.indexer.add_location(selected_location)
+
+    def status_changed(self, status, type=0):
+        if type == 1:
+            self.index_console.error(status)
+        elif type == 2:
+            self.index_console.warn(status)
+        else:
+            self.index_console.info(status)
+
+    def location_added(self, location):
+        self.locations.addItem(location)
+
+    def location_removed(self, location):
+        items = self.locations.findItems(location, Qt.MatchExactly)
+        if len(items) > 0:
+            for item in items:
+                self.locations.takeItem(self.locations.row(item))
+
+    def current_file_index_changed(self, file_index, num_files):
+        if file_index == 0:
+            self.index_progress_bar.setRange(0, num_files)
+        self.index_status_label.setText("Indexing file {} of {}".format(file_index + 1, num_files))
+        self.index_progress_bar.setValue(file_index)
+
+        QApplication.processEvents()
+
+    def indexing_finished(self):
+        self.index_progress_bar.setValue(self.index_progress_bar.maximum())
+        self.stop_index_button.setEnabled(False)
+        self.add_location_button.setEnabled(True)
+        self.locations.setEnabled(True)
+        self.remove_button.setEnabled(self.locations.currentRow() >= 0)
+        self.reindex_button.setEnabled(self.locations.currentRow() >= 0)
+
+class WheresTheFckReceipt:
+
+    def __init__(self):
         pass
 
+    def run(self):
+        # get app context
+        app_context = ApplicationContext()
 
-    def index_button_clicked(self):
-        pass
+        # window title
+        version = app_context.build_settings['version']
+        app_name = app_context.build_settings['app_name']
+        window_title = app_name + " v" + version
+        window = QMainWindow()
+        window.setWindowTitle(window_title)
 
+        # central tab widget
+        tab_widget = QTabWidget()
 
-    def query_dialog_search_button_clicked(self):
-        pass
+        # indexer
+        indexer = Indexer()
+        indexer_widget = IndexerWidget(None, indexer)
+        tab_widget.addTab(indexer_widget, "Indexer")
 
+        # searcher
+        searcher = Searcher(indexer.get_db())
+        searcher_widget = SearcherWidget(None, searcher)
+        tab_widget.addTab(searcher_widget, "Searcher")
 
-    def file_list_item_selection_changed(self):
-        pass
+        window.setCentralWidget(tab_widget)
+        window.resize(800, 600)
+        window.show()
+        # window.showMaximized()
+
+        exit_code = app_context.app.exec_()  # 2. Invoke app_context.app.exec_()
+        indexer.close_db()
+        sys.exit(exit_code)
