@@ -1,8 +1,8 @@
-pdf2image==1.13.1
-Pillow==7.1.2
-PyQt5==5.14.2
-PyQt5-sip==12.7.2
-PyQt5-stubs==5.14.2.2
-pytesseract==0.3.4
-textract==1.6.3
-Whoosh==2.7.4
+pdf2image
+Pillow
+PyQt5
+PyQt5-sip
+PyQt5-stubs
+pytesseract
+opencv-python
+fbs

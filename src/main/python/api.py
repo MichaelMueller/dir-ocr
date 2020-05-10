@@ -8,11 +8,13 @@ import sqlite3
 import sys
 import abc
 import cv2
+from PyQt5 import QtGui, QtWidgets
 
 from PyQt5.QtCore import QDateTime, QStandardPaths, QFile, QFileInfo, Qt
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QListWidget, QPushButton, QHBoxLayout, \
-    QTabWidget, QTextEdit, QApplication, QProgressBar, QFileDialog, QMessageBox, QLineEdit
+    QTabWidget, QTextEdit, QApplication, QProgressBar, QFileDialog, QMessageBox, QLineEdit, QTableWidget, QSpinBox, \
+    QHeaderView, QTableWidgetItem, QAbstractItemView
 
 ########### Abstract Classes
 from pytesseract import pytesseract, Output
@@ -43,9 +45,14 @@ class Searcher:
     def __init__(self, db):
         self.db = db  # type: sqlite3.Connection
 
-    def search(self, query):
+    def search(self, query, limit=None):
         c = self.db.cursor()
-        c.execute("select images.path as path from images, texts where texts.image_id = images.id and texts.text like ?", (query,))
+        sql = "select images.path as path from images, texts where texts.image_id = images.id and texts.text like ?"
+        if limit:
+            sql = sql + " limit ?"
+            c.execute(sql, (query, limit))
+        else:
+            c.execute(sql, (query,))
         rows = c.fetchall()
         return [i[0] for i in rows]
 
@@ -212,26 +219,54 @@ class SearcherWidget(QWidget):
 
         # query
         self.query = QLineEdit()
+        self.query.returnPressed.connect(self.search_button_clicked)
+        self.limit_box = QSpinBox()
+        self.limit_box.setValue(0)
         search_button = QPushButton('Search')
         search_button.clicked.connect(self.search_button_clicked)
+
         query_bar_layout = QHBoxLayout()
+        query_bar_layout.setContentsMargins(0, 0, 0, 0)
+        query_bar_layout.addWidget(QLabel("Search Term"))
         query_bar_layout.addWidget(self.query)
+        query_bar_layout.addWidget(QLabel("Max. Results"))
+        query_bar_layout.addWidget(self.limit_box)
         query_bar_layout.addWidget(search_button)
 
         # the file_list
-        self.match_list = QListWidget()
+        self.match_list = QTableWidget()
+        self.match_list.setShowGrid(True)
+        self.match_list.setAutoScroll(True)
+        self.match_list.setSelectionMode(QAbstractItemView.SingleSelection)
+
+        self.preview = QLabel()
+        preview_layout = QHBoxLayout()
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.addWidget(self.match_list)
+        preview_layout.addWidget(self.preview)
+        preview_widget = QWidget()
+        preview_widget.setLayout(preview_layout)
 
         # my layout
         layout = QVBoxLayout()
         layout.addLayout(query_bar_layout)
-        layout.addWidget(self.match_list)
+        layout.addWidget(preview_widget)
         self.setLayout(layout)
 
     def search_button_clicked(self):
-        matches = self.searcher.search(self.query.text())
+        matches = self.searcher.search(self.query.text(), self.limit_box.value())
         self.match_list.clear()
-        for match in matches:
-            self.match_list.addItem(match)
+        self.match_list.setColumnCount(1)
+        self.match_list.setHorizontalHeaderLabels(['Path'])
+        header = self.match_list.horizontalHeader()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
+        self.match_list.setRowCount(len(matches))
+        for i in range(len(matches)):
+            self.match_list.setItem(i, 0, QTableWidgetItem(matches[i]))
+
+        self.query.setFocus()
+        self.query.selectAll()
 
 class IndexerWidget(QWidget, IndexerObserver):
     def __init__(self, parent, indexer):
@@ -259,7 +294,7 @@ class IndexerWidget(QWidget, IndexerObserver):
         self.reindex_button.clicked.connect(self.reindex_button_clicked)
         self.reindex_button.setEnabled(False)
         file_list_action_bar_layout = QHBoxLayout()
-        file_list_action_bar_layout.setContentsMargins(0, 0, 0, 0);
+        file_list_action_bar_layout.setContentsMargins(0, 0, 0, 0)
         file_list_action_bar_layout.addWidget(self.add_location_button)
         file_list_action_bar_layout.addWidget(self.remove_button)
         file_list_action_bar_layout.addWidget(self.reindex_button)
