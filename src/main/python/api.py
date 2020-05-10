@@ -47,14 +47,15 @@ class Searcher:
 
     def search(self, query, limit=None):
         c = self.db.cursor()
-        sql = "select images.path as path from images, texts where texts.image_id = images.id and texts.text like ?"
+        sql = "select images.path as path, texts.text as text from images, texts where texts.image_id = images.id and texts.text like ?"
         if limit:
             sql = sql + " limit ?"
             c.execute(sql, (query, limit))
         else:
             c.execute(sql, (query,))
         rows = c.fetchall()
-        return [i[0] for i in rows]
+        #return [i[0] for i in rows]
+        return rows
 
 class Indexer:
     def __init__(self):
@@ -238,6 +239,7 @@ class SearcherWidget(QWidget):
         self.match_list.setShowGrid(True)
         self.match_list.setAutoScroll(True)
         self.match_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.match_list.itemSelectionChanged.connect(self.match_list_item_selection_changed)
 
         self.preview = QLabel()
         preview_layout = QHBoxLayout()
@@ -253,17 +255,21 @@ class SearcherWidget(QWidget):
         layout.addWidget(preview_widget)
         self.setLayout(layout)
 
+    def match_list_item_selection_changed(self):
+        curr_row = self.match_list.currentRow()
+
     def search_button_clicked(self):
         matches = self.searcher.search(self.query.text(), self.limit_box.value())
         self.match_list.clear()
-        self.match_list.setColumnCount(1)
-        self.match_list.setHorizontalHeaderLabels(['Path'])
+        self.match_list.setColumnCount(2)
+        self.match_list.setHorizontalHeaderLabels(['Path', 'Text'])
         header = self.match_list.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
         self.match_list.setRowCount(len(matches))
         for i in range(len(matches)):
-            self.match_list.setItem(i, 0, QTableWidgetItem(matches[i]))
+            self.match_list.setItem(i, 0, QTableWidgetItem(matches[i][0]))
+            self.match_list.setItem(i, 1, QTableWidgetItem(matches[i][1]))
 
         self.query.setFocus()
         self.query.selectAll()
