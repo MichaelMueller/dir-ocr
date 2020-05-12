@@ -48,7 +48,7 @@ class IndexJob(api_interface.IndexJob):
         return self.curr_file_idx
 
     def get_num_files(self) -> str:
-        return self.curr_file_idx
+        return self.num_files
 
     def get_messages(self) -> List[str]:
         messages = []
@@ -82,7 +82,7 @@ class IndexJob(api_interface.IndexJob):
     def __process_image_file(self, c: sqlite3.Cursor, path, dir_id):
 
         if c.execute("select id from images where path = ?", (path,)).fetchone() is not None:
-            self.__add_message("Skipping already indexed file {}.".format(path.replace(self.path + "/", "")), 2)
+            self.__add_message("Skipping already indexed file {}.".format(path.replace(self.path + "/", "")))
             return
 
         c.execute("insert into 'images' (path, directory_id) values (?, ?)", (path, dir_id,))
@@ -164,6 +164,13 @@ class WheresTheFckReceipt(api_interface.WheresTheFckReceipt):
         self.index_job_factory = index_job_factory
         self.db = None
 
+    def get_last_directory(self) -> str:
+        self.assert_db()
+        c = self.db.cursor()
+        c.execute("select path from directories order by id desc limit 1")
+        row = c.fetchone()
+        return row[0] if row and os.path.exists(row[0]) else None
+
     def assert_db(self):
         if not self.db:
             self.db = self.db_factory.create()
@@ -171,7 +178,7 @@ class WheresTheFckReceipt(api_interface.WheresTheFckReceipt):
     def get_directories(self) -> List[str]:
         self.assert_db()
         c = self.db.cursor()
-        c.execute("select path from locations")
+        c.execute("select path from directories")
         rows = c.fetchall()
         return [i[0] for i in rows]
 
@@ -181,7 +188,8 @@ class WheresTheFckReceipt(api_interface.WheresTheFckReceipt):
     def remove_directory(self, directory):
         self.assert_db()
         c = self.db.cursor()
-        c.execute("delete from locations where path = ?", (path,))
+        c.execute("delete from directories where path = ?", (directory,))
+        self.db.commit()
 
     def update_directory(self, directory):
         return self.index_job_factory.create(directory, self.db_factory)
@@ -192,7 +200,7 @@ class WheresTheFckReceipt(api_interface.WheresTheFckReceipt):
 
     def search(self, query, limit=None) -> List[Result]:
         c = self.db.cursor()
-        sql = "select images.path as path, texts.text as text from images, texts where texts.image_id = images.id and texts.text like ?"
+        sql = "select images.path as path, texts.text as text, images.doc_page as page from images, texts where texts.image_id = images.id and texts.text like ?"
         if limit:
             sql = sql + " limit ?"
             c.execute(sql, (query, limit))
@@ -233,7 +241,7 @@ class DbFactory(api_interface.DbFactory):
             c.execute(
                 "CREATE TABLE documents ( id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE NOT NULL, directory_id INTEGER NOT NULL, FOREIGN KEY(directory_id) REFERENCES directories(id) ON DELETE CASCADE )")
             c.execute(
-                "CREATE TABLE images ( id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE NOT NULL, directory_id INTEGER NOT NULL, document_id INTEGER, dcoument_page INTEGER, FOREIGN KEY(directory_id) REFERENCES directories(id) ON DELETE CASCADE, FOREIGN KEY(document_id) REFERENCES documents(id) )")
+                "CREATE TABLE images ( id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE NOT NULL, directory_id INTEGER NOT NULL, document_id INTEGER, doc_page INTEGER, FOREIGN KEY(directory_id) REFERENCES directories(id) ON DELETE CASCADE, FOREIGN KEY(document_id) REFERENCES documents(id) )")
             c.execute(
                 "CREATE TABLE texts ( id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, left INTEGER  NOT NULL, top INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, image_id INTEGER NOT NULL, FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE )")
             db.commit()

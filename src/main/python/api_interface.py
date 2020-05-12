@@ -78,6 +78,11 @@ class WheresTheFckReceipt:
     def get_directories(self) -> List[str]:
         return None
 
+    @abc.abstractmethod
+    def get_last_directory(self) -> str:
+        return None
+
+
 class DbFactory:
 
     @abc.abstractmethod
