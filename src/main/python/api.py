@@ -140,8 +140,8 @@ class Result(api_interface.Result):
 
     def __init__(self, data_tuple):
         self.path = data_tuple[0]
-        self.path = data_tuple[1]
-        self.path = data_tuple[2]
+        self.text = data_tuple[1]
+        self.page = data_tuple[2]
 
     def get_path(self) -> str:
         return self.path
