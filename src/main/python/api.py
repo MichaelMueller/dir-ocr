@@ -7,6 +7,8 @@ import os
 import sqlite3
 import sys
 import abc
+import time
+
 import cv2
 from PyQt5 import QtGui, QtWidgets
 
@@ -448,14 +450,17 @@ class WheresTheFckReceipt:
 
 class DbFactory:
     def __init__(self, db_path):
-        self.db_path = db_path # type QFileInfo
+        self.db_path = db_path  # type QFileInfo
 
-    def create(self):
+    def create(self, re_create=False):
         # database
         db_path = self.db_path
         if not os.path.exists(db_path.absolutePath()):
             os.makedirs(db_path.absolutePath())
         init_database = not os.path.exists(db_path.absoluteFilePath())
+        if re_create and init_database == False:
+            os.remove(db_path.absoluteFilePath())
+            init_database = True
         db = sqlite3.connect(db_path)
         c = db.cursor()
         c.execute("PRAGMA foreign_keys = ON")
@@ -470,25 +475,36 @@ class DbFactory:
             db.commit()
         return db
 
-class IndexJob(QThread):
+
+class IndexModel(QThread):
+    directory_removed = pyqtSignal(str)
+    directory_added = pyqtSignal(str)
     status_changed = pyqtSignal(str)
     processed_file_index_changed = pyqtSignal(int, int)
 
-    def __init__(self):
+    def __init__(self, db_factory):
         QThread.__init__(self)
+        self.db_factory = db_factory  # type: DbFactory
 
     def __del__(self):
-        self.wait()
+        pass
+        # self.wait()
+
+    def add_directory(self, directory):
+        if self.isRunning():
+            return
+        # create thread vars
+        self._directory = directory
+        self._db = self.db_factory.create()
+        self.run()
 
     def run(self):
-        pass
-
-
-class IndexModel(QThread):
-
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
-        self.indexer = Indexer()
+        i = 0
+        num_files = 60
+        while i < num_files:
+            self.processed_file_index_changed.emit(i, num_files)
+            time.sleep(1000)
+            ++i
 
 
 class IndexView(QWidget):
@@ -547,14 +563,26 @@ class IndexView(QWidget):
 
 
 class IndexController(QObject):
-    def __init__(self, parent=None):
+    def __init__(self, parent, db_factory):
         super().__init__(parent=parent)
+
+        # create view and model
         self.view = IndexView()
+        self.model = IndexModel(db_factory)
+
+        # connect
+        self.view.add_directory.clicked.connect(self.add_directory_clicked)
+
+    def add_directory_clicked(self):
+        directory = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
+        if directory:
+            self.model.add_directory(directory)
 
 
-class AppController(QObject):
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
+class AppView(QMainWindow):
+
+    def __init__(self, tabs, parent=None):
+        QWidget.__init__(self, parent=None)
 
         # build window title
         app_context = ApplicationContext()
@@ -562,10 +590,10 @@ class AppController(QObject):
         app_name = app_context.build_settings['app_name']
         window_title = app_name + " v" + version
 
-        # create tab widget and sub controller and add widgets
+        # tab widget
         tab_widget = QTabWidget()
-        index_controller = IndexController(self)
-        tab_widget.addTab(index_controller.view, "Index")
+        for key, tab in tabs.items():
+            tab_widget.addTab(tab, key)
 
         # build main window
         self.window = QMainWindow()
@@ -573,9 +601,30 @@ class AppController(QObject):
         self.window.setCentralWidget(tab_widget)
         self.window.resize(800, 600)
 
+
+class AppController(QObject):
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+
+        # CREATE SUBCONTROLLER
+        # create db
+        db_path = QFileInfo(
+            QStandardPaths.writableLocation(QStandardPaths.DataLocation) + "/" + ApplicationContext().build_settings[
+                'app_name'] + ".sqlite3")
+        db_factory = DbFactory(db_path)
+        re_create = "--recreate" in sys.argv
+        db_factory.create(re_create)
+
+        # create tab widget and sub controller and add widgets
+        index_controller = IndexController(self, db_factory)
+
+        # VIEW
+        tabs = {"Indexer": index_controller.view}
+        self.view = AppView(tabs)
+
     def start(self):
         # run the application
         app_context = ApplicationContext()
-        self.window.show()
+        self.view.show()
         exit_code = app_context.app.exec_()  # 2. Invoke app_context.app.exec_()
         return exit_code
