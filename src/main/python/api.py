@@ -503,8 +503,8 @@ class IndexModel(QThread):
         num_files = 60
         while i < num_files:
             self.processed_file_index_changed.emit(i, num_files)
-            time.sleep(1000)
-            ++i
+            time.sleep(1)
+            i = i + 1
 
 
 class IndexView(QWidget):
@@ -539,7 +539,7 @@ class IndexView(QWidget):
         self.index_status = QLabel("")
         self.index_progress = QProgressBar()
         self.stop_index = QPushButton('Stop Indexing')
-        self.stop_index.setEnabled(False)
+        self.stop_index.setEnabled(True)
         index_status_widget_layout = QHBoxLayout()
         index_status_widget_layout.setContentsMargins(0, 0, 0, 0)
         index_status_widget_layout.addWidget(self.index_status)
@@ -561,6 +561,12 @@ class IndexView(QWidget):
         layout.addWidget(self.index_console)
         self.setLayout(layout)
 
+    def current_file_index_changed(self, file_index, num_files):
+        if file_index == 0:
+            self.index_progress.setRange(0, num_files)
+        self.index_status.setText("Indexing file {} of {}".format(file_index + 1, num_files))
+        self.index_progress.setValue(file_index)
+
 
 class IndexController(QObject):
     def __init__(self, parent, db_factory):
@@ -572,16 +578,22 @@ class IndexController(QObject):
 
         # connect
         self.view.add_directory.clicked.connect(self.add_directory_clicked)
+        self.view.stop_index.clicked.connect(self.stop_index_clicked)
+        self.model.processed_file_index_changed.connect(self.view.current_file_index_changed)
+
+    def stop_index_clicked(self):
+        self.model.terminate()
+        self.model.quit()
 
     def add_directory_clicked(self):
-        directory = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
+        directory = str(QFileDialog.getExistingDirectory(self.view, "Select Directory"))
         if directory:
             self.model.add_directory(directory)
 
 
 class AppView(QMainWindow):
 
-    def __init__(self, tabs, parent=None):
+    def __init__(self, parent=None):
         QWidget.__init__(self, parent=None)
 
         # build window title
@@ -591,15 +603,12 @@ class AppView(QMainWindow):
         window_title = app_name + " v" + version
 
         # tab widget
-        tab_widget = QTabWidget()
-        for key, tab in tabs.items():
-            tab_widget.addTab(tab, key)
+        self.tab_widget = QTabWidget()
 
         # build main window
-        self.window = QMainWindow()
-        self.window.setWindowTitle(window_title)
-        self.window.setCentralWidget(tab_widget)
-        self.window.resize(800, 600)
+        self.setWindowTitle(window_title)
+        self.setCentralWidget(self.tab_widget)
+        self.resize(800, 600)
 
 
 class AppController(QObject):
@@ -619,8 +628,8 @@ class AppController(QObject):
         index_controller = IndexController(self, db_factory)
 
         # VIEW
-        tabs = {"Indexer": index_controller.view}
-        self.view = AppView(tabs)
+        self.view = AppView()
+        self.view.tab_widget.addTab(index_controller.view, "Index")
 
     def start(self):
         # run the application
