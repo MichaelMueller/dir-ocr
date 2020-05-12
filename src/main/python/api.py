@@ -10,7 +10,7 @@ import abc
 import cv2
 from PyQt5 import QtGui, QtWidgets
 
-from PyQt5.QtCore import QDateTime, QStandardPaths, QFile, QFileInfo, Qt
+from PyQt5.QtCore import QDateTime, QStandardPaths, QFile, QFileInfo, Qt, QObject, QThread, pyqtSignal
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QListWidget, QPushButton, QHBoxLayout, \
     QTabWidget, QTextEdit, QApplication, QProgressBar, QFileDialog, QMessageBox, QLineEdit, QTableWidget, QSpinBox, \
@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QListWidg
 
 ########### Abstract Classes
 from pytesseract import pytesseract, Output
+
 
 class IndexerObserver:
     @abc.abstractmethod
@@ -40,6 +41,7 @@ class IndexerObserver:
     def indexing_finished(self, num_files):
         pass
 
+
 ########### Backend
 class Searcher:
     def __init__(self, db):
@@ -54,8 +56,9 @@ class Searcher:
         else:
             c.execute(sql, (query,))
         rows = c.fetchall()
-        #return [i[0] for i in rows]
+        # return [i[0] for i in rows]
         return rows
+
 
 class Indexer:
     def __init__(self):
@@ -213,10 +216,11 @@ class ConsoleWidget(QWidget):
     def error(self, text):
         self.set_text("<font color='red'>ERR</font>: " + text)
 
+
 class SearcherWidget(QWidget):
     def __init__(self, parent, searcher):
         QWidget.__init__(self, parent)
-        self.searcher = searcher # type: Searcher
+        self.searcher = searcher  # type: Searcher
 
         # query
         self.query = QLineEdit()
@@ -273,6 +277,7 @@ class SearcherWidget(QWidget):
 
         self.query.setFocus()
         self.query.selectAll()
+
 
 class IndexerWidget(QWidget, IndexerObserver):
     def __init__(self, parent, indexer):
@@ -401,6 +406,7 @@ class IndexerWidget(QWidget, IndexerObserver):
         self.remove_button.setEnabled(self.locations.currentRow() >= 0)
         self.reindex_button.setEnabled(self.locations.currentRow() >= 0)
 
+
 class WheresTheFckReceipt:
 
     def __init__(self):
@@ -438,3 +444,138 @@ class WheresTheFckReceipt:
         exit_code = app_context.app.exec_()  # 2. Invoke app_context.app.exec_()
         indexer.close_db()
         sys.exit(exit_code)
+
+
+class DbFactory:
+    def __init__(self, db_path):
+        self.db_path = db_path # type QFileInfo
+
+    def create(self):
+        # database
+        db_path = self.db_path
+        if not os.path.exists(db_path.absolutePath()):
+            os.makedirs(db_path.absolutePath())
+        init_database = not os.path.exists(db_path.absoluteFilePath())
+        db = sqlite3.connect(db_path)
+        c = db.cursor()
+        c.execute("PRAGMA foreign_keys = ON")
+        if init_database:
+            c.execute("CREATE TABLE 'directories' ( 'id' INTEGER PRIMARY KEY AUTOINCREMENT, 'path' TEXT UNIQUE )")
+            c.execute(
+                "CREATE TABLE 'documents' ( 'id' INTEGER PRIMARY KEY AUTOINCREMENT, 'path' TEXT UNIQUE NOT NULL, 'directory_id' INTEGER NOT NULL, FOREIGN KEY('directory_id') REFERENCES 'directories'('id') ON DELETE CASCADE )")
+            c.execute(
+                "CREATE TABLE 'images' ( 'id' INTEGER PRIMARY KEY AUTOINCREMENT, 'path' TEXT UNIQUE NOT NULL, 'directory_id' INTEGER NOT NULL, 'document_id' INTEGER, dcoument_page INTEGER, FOREIGN KEY('directory_id') REFERENCES 'directories'('id') ON DELETE CASCADE, FOREIGN KEY('document_id') REFERENCES 'documents'('id') )")
+            c.execute(
+                "CREATE TABLE 'texts' ( 'id' INTEGER PRIMARY KEY AUTOINCREMENT, 'text' TEXT NOT NULL, 'left' INTEGER  NOT NULL, 'top' INTEGER NOT NULL, 'width' INTEGER NOT NULL, 'height' INTEGER NOT NULL, 'image_id' INTEGER NOT NULL, FOREIGN KEY('image_id') REFERENCES 'images'('id') ON DELETE CASCADE )")
+            db.commit()
+        return db
+
+class IndexJob(QThread):
+    status_changed = pyqtSignal(str)
+    processed_file_index_changed = pyqtSignal(int, int)
+
+    def __init__(self):
+        QThread.__init__(self)
+
+    def __del__(self):
+        self.wait()
+
+    def run(self):
+        pass
+
+
+class IndexModel(QThread):
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.indexer = Indexer()
+
+
+class IndexView(QWidget):
+    def __init__(self, parent=None):
+        QWidget.__init__(self, parent=None)
+
+        ## GUI
+
+        # add dir button
+        self.add_directory = QPushButton('Add Directory')
+        self.add_directory.setEnabled(True)
+
+        # locations
+        self.directories = QListWidget()
+
+        # the locations_action_bar
+        self.index = QPushButton('Update')
+        self.index.setEnabled(False)
+        self.remove_dir = QPushButton('Remove')
+        self.remove_dir.setEnabled(False)
+        self.re_index = QPushButton('Re-Index')
+        self.re_index.setEnabled(False)
+        file_list_action_bar_layout = QHBoxLayout()
+        file_list_action_bar_layout.setContentsMargins(0, 0, 0, 0)
+        file_list_action_bar_layout.addWidget(self.index)
+        file_list_action_bar_layout.addWidget(self.remove_dir)
+        file_list_action_bar_layout.addWidget(self.re_index)
+        file_list_action_bar_widget = QWidget()
+        file_list_action_bar_widget.setLayout(file_list_action_bar_layout)
+
+        # index_status_widget
+        self.index_status = QLabel("")
+        self.index_progress = QProgressBar()
+        self.stop_index = QPushButton('Stop Indexing')
+        self.stop_index.setEnabled(False)
+        index_status_widget_layout = QHBoxLayout()
+        index_status_widget_layout.setContentsMargins(0, 0, 0, 0)
+        index_status_widget_layout.addWidget(self.index_status)
+        index_status_widget_layout.addWidget(self.index_progress)
+        index_status_widget_layout.addWidget(self.stop_index)
+        index_status_widget = QWidget()
+        index_status_widget.setLayout(index_status_widget_layout)
+
+        # index console
+        self.index_console = ConsoleWidget()
+
+        # layout
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Indexed Directories:"))
+        layout.addWidget(self.add_directory)
+        layout.addWidget(self.directories)
+        layout.addWidget(file_list_action_bar_widget)
+        layout.addWidget(index_status_widget)
+        layout.addWidget(self.index_console)
+        self.setLayout(layout)
+
+
+class IndexController(QObject):
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.view = IndexView()
+
+
+class AppController(QObject):
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+
+        # build window title
+        app_context = ApplicationContext()
+        version = app_context.build_settings['version']
+        app_name = app_context.build_settings['app_name']
+        window_title = app_name + " v" + version
+
+        # create tab widget and sub controller and add widgets
+        tab_widget = QTabWidget()
+        index_controller = IndexController(self)
+        tab_widget.addTab(index_controller.view, "Index")
+
+        # build main window
+        self.window = QMainWindow()
+        self.window.setWindowTitle(window_title)
+        self.window.setCentralWidget(tab_widget)
+        self.window.resize(800, 600)
+
+    def start(self):
+        # run the application
+        app_context = ApplicationContext()
+        self.window.show()
+        exit_code = app_context.app.exec_()  # 2. Invoke app_context.app.exec_()
+        return exit_code
