@@ -93,7 +93,7 @@ class DbFactory:
 class IndexJobFactory:
 
     @abc.abstractmethod
-    def create(self, path: str, db_factory: DbFactory) -> IndexJob:
+    def create(self, path: str, db_factory: DbFactory, app_data_dir: str) -> IndexJob:
         return None
 
 

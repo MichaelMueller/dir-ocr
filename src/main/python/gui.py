@@ -1,5 +1,7 @@
 import os
+import platform
 import sqlite3
+import subprocess
 import sys
 import abc
 import time
@@ -9,10 +11,11 @@ from PyQt5 import QtGui, QtWidgets
 
 from PyQt5.QtCore import QDateTime, QStandardPaths, QFile, QFileInfo, Qt, QObject, QThread, pyqtSignal, QTimer, \
     QSettings, QCoreApplication
+from PyQt5.QtGui import QPixmap
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QListWidget, QPushButton, QHBoxLayout, \
     QTabWidget, QTextEdit, QApplication, QProgressBar, QFileDialog, QMessageBox, QLineEdit, QTableWidget, QSpinBox, \
-    QHeaderView, QTableWidgetItem, QAbstractItemView
+    QHeaderView, QTableWidgetItem, QAbstractItemView, QSplitter
 
 from pytesseract import pytesseract, Output
 import api_interface
@@ -94,6 +97,8 @@ class Indexer(QWidget):
                                                          QFileDialog.ShowDirsOnly))
         if directory:
             # get the job
+            if not self.directories.findItems(directory, Qt.MatchExactly):
+                self.directories.addItem(directory)
             self.index_job = self.wheres_the_fck_receipt.add_directory(directory)
             self.run_indexer()
 
@@ -149,9 +154,6 @@ class Indexer(QWidget):
             self.index_progress.setValue(curr_file_idx)
         if self.index_job.is_finished():
             self.index_progress.setValue(self.index_progress.maximum())
-            path = self.index_job.get_path()
-            if not self.directories.findItems(path, Qt.MatchExactly):
-                self.directories.addItem(path)
             self.indexing_stopped()
 
 
@@ -159,6 +161,8 @@ class SearcherWidget(QWidget):
     def __init__(self, wheres_the_fck_receipt: api_interface.WheresTheFckReceipt, parent=None):
         QWidget.__init__(self, parent)
         self.wheres_the_fck_receipt = wheres_the_fck_receipt  # type: api_interface.WheresTheFckReceipt
+        self.results = None  # type List[api_interface.Result]
+        self.current_preview_image = None
 
         # query
         self.query = QLineEdit()
@@ -181,37 +185,69 @@ class SearcherWidget(QWidget):
         self.match_list.setShowGrid(True)
         self.match_list.setAutoScroll(True)
         self.match_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.match_list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.match_list.itemSelectionChanged.connect(self.match_list_item_selection_changed)
+        self.match_list.itemDoubleClicked.connect(self.match_list_double_clicked)
+        self.match_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
         self.preview = QLabel()
-        preview_layout = QHBoxLayout()
-        preview_layout.setContentsMargins(0, 0, 0, 0)
-        preview_layout.addWidget(self.match_list)
-        preview_layout.addWidget(self.preview)
-        preview_widget = QWidget()
-        preview_widget.setLayout(preview_layout)
+        self.preview_widget = QSplitter()
+        self.preview_widget.setContentsMargins(0, 0, 0, 0)
+        self.preview_widget.addWidget(self.match_list)
+        self.preview_widget.addWidget(self.preview)
 
         # my layout
         layout = QVBoxLayout()
         layout.addLayout(query_bar_layout)
-        layout.addWidget(preview_widget)
+        layout.addWidget(self.preview_widget)
         self.setLayout(layout)
+
+    def match_list_double_clicked(self, mi):
+        row = mi.row()
+        result = self.results[row]
+        self.open_file(result.get_path())
+
+    def open_file(self, filepath):
+        if platform.system() == 'Darwin':  # macOS
+            subprocess.call(('open', filepath))
+        elif platform.system() == 'Windows':  # Windows
+            os.startfile(filepath)
+        else:  # linux variants
+            subprocess.call(('xdg-open', filepath))
 
     def match_list_item_selection_changed(self):
         curr_row = self.match_list.currentRow()
-        # todo
+        if curr_row <= 0:
+            return
+        result = self.results[curr_row]
+        im = result.get_preview_image()
+        if im is not None:
+            self.current_preview_image = QtGui.QImage(im.data, im.shape[1], im.shape[0], im.strides[0],
+                                                      QtGui.QImage.Format_RGB888).rgbSwapped()
+            w = self.preview_widget.width() / 2.0
+            h = self.preview_widget.height()
+            self.preview_widget.setSizes([w, w])
+
+            self.preview.setPixmap(QPixmap(self.current_preview_image).scaled(w, h, Qt.KeepAspectRatio))
+        else:
+            self.preview.setText("Preview could not be loaded.")
+
+    def splitter_moved(self, pos, index):
+        w = self.preview.width()
+        h = self.preview.height()
+        self.preview.setPixmap(QPixmap(self.current_preview_image).scaled(w, h, Qt.KeepAspectRatio))
 
     def search_button_clicked(self):
-        matches = self.wheres_the_fck_receipt.search(self.query.text(), self.limit_box.value())
+        self.results = self.wheres_the_fck_receipt.search(self.query.text(), self.limit_box.value())
         self.match_list.clear()
         self.match_list.setColumnCount(2)
         self.match_list.setHorizontalHeaderLabels(['Path', 'Text'])
         header = self.match_list.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
-        self.match_list.setRowCount(len(matches))
-        for i in range(len(matches)):
-            result = matches[i]
+        self.match_list.setRowCount(len(self.results))
+        for i in range(len(self.results)):
+            result = self.results[i]
             self.match_list.setItem(i, 0, QTableWidgetItem(result.get_path()))
             self.match_list.setItem(i, 1, QTableWidgetItem(result.get_text()))
 
@@ -229,7 +265,6 @@ class WheresTheFckReceipt(QMainWindow):
         self.tab_widget = QTabWidget()
         self.tab_widget.addTab(Indexer(wheres_the_fck_receipt), "Indexer")
         self.tab_widget.addTab(SearcherWidget(wheres_the_fck_receipt), "Searcher")
-
 
         # build window title
         app_context = ApplicationContext()

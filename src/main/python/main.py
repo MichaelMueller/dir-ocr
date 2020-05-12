@@ -23,9 +23,10 @@ if __name__ == '__main__':
     app_context = ApplicationContext()
     delete_db = "--delete_db" in sys.argv
     app_data_dir_path = AppDataDirPath()
-    db_factory = api.DbFactory(app_data_dir_path, delete_db)
+    db_factory = api.DbFactory(app_data_dir_path.get(), delete_db)
     index_job_factory = api.IndexJobFactory()
-    wheres_the_fck_receipt = gui.WheresTheFckReceipt(api.WheresTheFckReceipt(db_factory, index_job_factory))
-    wheres_the_fck_receipt.show()
+    wheres_the_fck_receipt = gui.WheresTheFckReceipt(api.WheresTheFckReceipt(app_data_dir_path.get(), db_factory, index_job_factory))
+    #wheres_the_fck_receipt.show()
+    wheres_the_fck_receipt.showMaximized()
     exit_code = int(app_context.app.exec_())  # 2. Invoke app_context.app.exec_()
     sys.exit(exit_code)
