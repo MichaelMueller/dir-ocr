@@ -15,6 +15,10 @@ class IndexJob:
         return None
 
     @abc.abstractmethod
+    def get_path(self) -> str:
+        return None
+
+    @abc.abstractmethod
     def get_curr_file_index(self) -> int:
         return None
 
@@ -24,10 +28,6 @@ class IndexJob:
 
     @abc.abstractmethod
     def get_messages(self) -> List[str]:
-        return None
-
-    @abc.abstractmethod
-    def get_status(self) -> str:
         return None
 
     @abc.abstractmethod
@@ -71,9 +71,12 @@ class WheresTheFckReceipt:
         return None
 
     @abc.abstractmethod
-    def search(self, search_string) -> List[Result]:
+    def search(self, search_string, limit=None) -> List[Result]:
         return None
 
+    @abc.abstractmethod
+    def get_directories(self) -> List[str]:
+        return None
 
 class DbFactory:
 
@@ -85,5 +88,12 @@ class DbFactory:
 class IndexJobFactory:
 
     @abc.abstractmethod
-    def create(self, db_connection: sqlite3.Connection) -> IndexJob:
+    def create(self, path: str, db_factory: DbFactory) -> IndexJob:
+        return None
+
+
+class AppDataDirPath:
+
+    @abc.abstractmethod
+    def get(self) -> str:
         return None
