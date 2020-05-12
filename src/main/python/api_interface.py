@@ -1,6 +1,7 @@
 import abc
 from typing import List
 import numpy as np
+import sqlite3
 
 
 # ABSTRACT DESIGN
@@ -53,17 +54,36 @@ class Result:
 
 
 class WheresTheFckReceipt:
+    @abc.abstractmethod
     def add_directory(self, directory) -> IndexJob:
         return None
 
+    @abc.abstractmethod
     def remove_directory(self, directory):
         pass
 
+    @abc.abstractmethod
     def update_directory(self, directory):
         pass
 
+    @abc.abstractmethod
     def reindex_directory(self, directory) -> IndexJob:
         return None
 
-    def search(self, search_string, create_preview=False) -> List[Result]:
+    @abc.abstractmethod
+    def search(self, search_string) -> List[Result]:
+        return None
+
+
+class DbFactory:
+
+    @abc.abstractmethod
+    def create(self) -> sqlite3.Connection:
+        return None
+
+
+class IndexJobFactory:
+
+    @abc.abstractmethod
+    def create(self, db_connection: sqlite3.Connection) -> IndexJob:
         return None
