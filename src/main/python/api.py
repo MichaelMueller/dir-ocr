@@ -162,7 +162,8 @@ class IndexJob(api_interface.IndexJob):
                         #    img_path = self.app_data_path + "/" + self.random_string() + ".png"
                         #    if not os.path.exists(img_path):
                         #        break
-                        img_path = self.app_data_path + "/" + hashlib.md5(path.encode('utf-8')).hexdigest() + "_page" + str(
+                        img_path = self.app_data_path + "/" + hashlib.md5(
+                            path.encode('utf-8')).hexdigest() + "_page" + str(
                             page) + ".jpg"
                         self.__add_message(
                             "Writing page {} of {} as image {}.".format(page, len(images), img_path))
@@ -175,11 +176,12 @@ class IndexJob(api_interface.IndexJob):
                 for img_path in image_paths:
                     self.__add_message(
                         "Extracting text from {}.".format(
-                                                                         img_path[0].replace(self.path + "/", "")))
+                            img_path[0].replace(self.path + "/", "")))
                     try:
                         self.__process_image_file(c, img_path[0], dir_id, img_path[1], img_path[2])
                     except:
-                        self.__add_message("An unknown error occured while converting {}".format(img_path[0].replace(self.path + "/", "")))
+                        self.__add_message("An unknown error occured while converting {}: {}".format(
+                            img_path[0].replace(self.path + "/", ""), sys.exc_info()[0]))
                 db.commit()
 
             # commit or rollback
@@ -190,11 +192,13 @@ class IndexJob(api_interface.IndexJob):
                 self.__add_message("Indexing successfully finished")
                 db.commit()
             self.finished = True
+        except:
+            e = sys.exc_info()[0]
+            self.__add_message("An unknown error occured : " + str(e))
+
         finally:  # catch *all* exceptions
             self._stop = True
             db.rollback()
-            #e = sys.exc_info()[0]
-            self.__add_message("An unknown error occured")
 
     def random_string(self, stringLength=5):
         letters = string.ascii_lowercase
@@ -275,7 +279,7 @@ class WheresTheFckReceipt(api_interface.WheresTheFckReceipt):
         self.assert_db()
         c = self.db.cursor()
         own_images = c.execute(
-            "select path from images, directories where directories.id = images.directory_id and images.document_id != null")
+            "select images.path as path from images, directories where directories.id = images.directory_id and images.document_id != null")
         for own_image in own_images.fetchall():
             os.remove(own_image[0])
         c.execute("delete from directories where path = ?", (directory,))
@@ -288,9 +292,15 @@ class WheresTheFckReceipt(api_interface.WheresTheFckReceipt):
         self.remove_directory(directory)
         return self.add_directory(directory)
 
-    def search(self, query, limit=None) -> List[Result]:
+    def search(self, query: str, limit: int = None, case_sensitive: bool = False) -> List[Result]:
         c = self.db.cursor()
-        query = "%" + query + "%"
+        if case_sensitive:
+            query = "%" + query + "%"
+            text_where_clause = "texts.text like ?"
+        else:
+            query = "%" + query.lower() + "%"
+            text_where_clause = "lower(texts.text) like ?"
+
         sql = "select images.path as path, texts.text as text, images.doc_page as page, images.document_id as doc_id, texts.top as top, texts.left as left, texts.width as width, texts.height as height from images, texts where texts.image_id = images.id and texts.text like ?"
         if limit:
             sql = sql + " limit ?"

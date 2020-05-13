@@ -71,7 +71,7 @@ class WheresTheFckReceipt:
         return None
 
     @abc.abstractmethod
-    def search(self, search_string, limit=None) -> List[Result]:
+    def search(self, search_string, limit=None, case_sensitive=False) -> List[Result]:
         return None
 
     @abc.abstractmethod

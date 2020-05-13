@@ -15,7 +15,7 @@ from PyQt5.QtGui import QPixmap
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QListWidget, QPushButton, QHBoxLayout, \
     QTabWidget, QTextEdit, QApplication, QProgressBar, QFileDialog, QMessageBox, QLineEdit, QTableWidget, QSpinBox, \
-    QHeaderView, QTableWidgetItem, QAbstractItemView, QSplitter
+    QHeaderView, QTableWidgetItem, QAbstractItemView, QSplitter, QCheckBox
 
 from pytesseract import pytesseract, Output
 import api_interface
@@ -74,7 +74,7 @@ class Indexer(QWidget):
         # index console
         self.index_console = QTextEdit()
         self.index_console.setReadOnly(True)
-        self.index_console.setEnabled(False)
+        # self.index_console.setEnabled(False)
 
         # layout
         layout = QVBoxLayout()
@@ -110,7 +110,7 @@ class Indexer(QWidget):
         self.index_progress.setEnabled(True)
         self.index_progress.reset()
         self.stop_index.setEnabled(True)
-        self.index_console.setEnabled(True)
+        #self.index_console.setEnabled(True)
         self.index_console.clear()
         # start job
         self.stop_index.setEnabled(True)
@@ -140,7 +140,7 @@ class Indexer(QWidget):
         self.file_list_action_bar_widget.setEnabled(len(self.directories.selectedItems()) > 0)
         self.index_progress.setEnabled(False)
         self.stop_index.setEnabled(False)
-        self.index_console.setEnabled(False)
+        #self.index_console.setEnabled(False)
         self.index_job = None
 
     def index_job_timer_timeout(self):
@@ -169,6 +169,7 @@ class SearcherWidget(QWidget):
         self.query.returnPressed.connect(self.search_button_clicked)
         self.limit_box = QSpinBox()
         self.limit_box.setValue(0)
+        self.cs_box = QCheckBox("Case Sensitive")
         search_button = QPushButton('Search')
         search_button.clicked.connect(self.search_button_clicked)
 
@@ -178,6 +179,7 @@ class SearcherWidget(QWidget):
         query_bar_layout.addWidget(self.query)
         query_bar_layout.addWidget(QLabel("Max. Results"))
         query_bar_layout.addWidget(self.limit_box)
+        query_bar_layout.addWidget(self.cs_box)
         query_bar_layout.addWidget(search_button)
 
         # the file_list
@@ -238,7 +240,7 @@ class SearcherWidget(QWidget):
         self.preview.setPixmap(QPixmap(self.current_preview_image).scaled(w, h, Qt.KeepAspectRatio))
 
     def search_button_clicked(self):
-        self.results = self.wheres_the_fck_receipt.search(self.query.text(), self.limit_box.value())
+        self.results = self.wheres_the_fck_receipt.search(self.query.text(), self.limit_box.value(), self.cs_box.isChecked())
         self.match_list.clear()
         self.match_list.setColumnCount(2)
         self.match_list.setHorizontalHeaderLabels(['Path', 'Text'])
