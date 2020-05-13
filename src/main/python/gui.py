@@ -218,9 +218,10 @@ class SearcherWidget(QWidget):
             subprocess.call(('xdg-open', filepath))
 
     def match_list_item_selection_changed(self):
-        curr_row = self.match_list.currentRow()
-        if curr_row <= 0:
+        selected_items = self.match_list.selectedItems()
+        if len(selected_items) == 0:
             return
+        curr_row = self.match_list.currentRow()
         result = self.results[curr_row]
         im = result.get_preview_image()
         if im is not None:
@@ -242,16 +243,17 @@ class SearcherWidget(QWidget):
     def search_button_clicked(self):
         self.results = self.wheres_the_fck_receipt.search(self.query.text(), self.limit_box.value(), self.cs_box.isChecked())
         self.match_list.clear()
-        self.match_list.setColumnCount(2)
-        self.match_list.setHorizontalHeaderLabels(['Path', 'Text'])
+        self.match_list.setColumnCount(3)
+        self.match_list.setHorizontalHeaderLabels(['Text', 'Path', 'Page'])
         header = self.match_list.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-        header.setStretchLastSection(True)
+        # header.setStretchLastSection(True)
         self.match_list.setRowCount(len(self.results))
         for i in range(len(self.results)):
             result = self.results[i]
-            self.match_list.setItem(i, 0, QTableWidgetItem(result.get_path()))
-            self.match_list.setItem(i, 1, QTableWidgetItem(result.get_text()))
+            self.match_list.setItem(i, 0, QTableWidgetItem(result.get_text()))
+            self.match_list.setItem(i, 1, QTableWidgetItem(result.get_path()))
+            self.match_list.setItem(i, 2, QTableWidgetItem(str(result.get_page())))
 
         self.query.setFocus()
         self.query.selectAll()

@@ -141,6 +141,7 @@ class IndexJob(api_interface.IndexJob):
             for i in range(self.num_files):
                 if self._stop:
                     break
+
                 self.curr_file_idx = i
                 path = scan_files[i]
                 rel_path = path.replace(self.path + "/", "")
@@ -148,41 +149,47 @@ class IndexJob(api_interface.IndexJob):
                 self.__add_message(
                     "File {} of {}: Analyzing {}.".format(i + 1, self.num_files, rel_path))
 
-                _, ext = os.path.splitext(path)
-                image_paths = []
-                if ext.lower() == ".pdf":
+                try:
+                    _, ext = os.path.splitext(path)
+                    image_paths = []
+                    if ext.lower() == ".pdf":
 
-                    self.__add_message(
-                        "Converting {} to single image files.".format(rel_path))
-                    images = convert_from_path(path, 300)
-                    page = 0
-                    for image in images:
-                        page = page + 1
-                        # while True:
-                        #    img_path = self.app_data_path + "/" + self.random_string() + ".png"
-                        #    if not os.path.exists(img_path):
-                        #        break
-                        img_path = self.app_data_path + "/" + hashlib.md5(
-                            path.encode('utf-8')).hexdigest() + "_page" + str(
-                            page) + ".jpg"
                         self.__add_message(
-                            "Writing page {} of {} as image {}.".format(page, len(images), img_path))
-                        # cv2.imwrite(img_path, image)
-                        image.save(img_path, 'JPEG')
-                        image_paths.append((img_path, path, page))
-                else:
-                    image_paths = [(path, None, None)]
+                            "Converting {} to single image files.".format(rel_path))
+                        images = convert_from_path(path, 300)
+                        page = 0
+                        for image in images:
+                            page = page + 1
+                            # while True:
+                            #    img_path = self.app_data_path + "/" + self.random_string() + ".png"
+                            #    if not os.path.exists(img_path):
+                            #        break
+                            img_path = self.app_data_path + "/" + hashlib.md5(
+                                path.encode('utf-8')).hexdigest() + "_page" + str(
+                                page) + ".jpg"
+                            self.__add_message(
+                                "Writing page {} of {} as image {}.".format(page, len(images), img_path))
+                            # cv2.imwrite(img_path, image)
+                            if not os.path.exists(img_path):
+                                image.save(img_path, 'JPEG')
+                            image_paths.append((img_path, path, page))
+                    else:
+                        image_paths = [(path, None, None)]
 
-                for img_path in image_paths:
-                    self.__add_message(
-                        "Extracting text from {}.".format(
-                            img_path[0].replace(self.path + "/", "")))
-                    try:
-                        self.__process_image_file(c, img_path[0], dir_id, img_path[1], img_path[2])
-                    except:
-                        self.__add_message("An unknown error occured while converting {}: {}".format(
-                            img_path[0].replace(self.path + "/", ""), sys.exc_info()[0]))
-                db.commit()
+                    for img_path in image_paths:
+                        self.__add_message(
+                            "Extracting text from {}.".format(
+                                img_path[0].replace(self.path + "/", "")))
+                        try:
+                            self.__process_image_file(c, img_path[0], dir_id, img_path[1], img_path[2])
+                        except:
+                            self.__add_message("An unknown error occured while converting {}: {}".format(
+                                img_path[0].replace(self.path + "/", ""), sys.exc_info()[0]))
+
+                    db.commit()
+                except:
+                    self.__add_message("An unknown error occured while processing {}: {}".format(
+                        rel_path, sys.exc_info()[0]))
 
             # commit or rollback
             if self._stop:
@@ -193,11 +200,9 @@ class IndexJob(api_interface.IndexJob):
                 db.commit()
             self.finished = True
         except:
+            self._stop = True
             e = sys.exc_info()[0]
             self.__add_message("An unknown error occured : " + str(e))
-
-        finally:  # catch *all* exceptions
-            self._stop = True
             db.rollback()
 
     def random_string(self, stringLength=5):
@@ -218,7 +223,7 @@ class Result(api_interface.Result):
         self.height = height
 
     def get_path(self) -> str:
-        return self.path
+        return self.doc_path if self.doc_path is not None else self.path
 
     def get_text(self) -> str:
         return self.text
@@ -230,7 +235,7 @@ class Result(api_interface.Result):
         preview_image = None
 
         if not os.path.exists(self.path):
-            return None
+            return preview_image
         image = cv2.imread(self.path)
         overlay = image.copy()
 
