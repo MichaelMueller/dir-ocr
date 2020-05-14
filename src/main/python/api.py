@@ -6,7 +6,7 @@ import string
 import sys
 import threading
 import time
-from typing import List
+from typing import List, Dict, Tuple
 
 import cv2
 import numpy as np
@@ -18,10 +18,12 @@ import api_interface
 
 class IndexJob(api_interface.IndexJob):
 
-    def __init__(self, path, db_factory: api_interface.DbFactory, app_data_path):
+    def __init__(self, path, db_factory: api_interface.DbFactory, app_data_path, poppler_path=None, tesseract_exe=None):
         self.path = path
         self.db_factory = db_factory
         self.app_data_path = app_data_path
+        self.poppler_path = poppler_path
+        self.tesseract_exe = tesseract_exe
 
         self._stop = False
         self.curr_file_idx = None
@@ -100,6 +102,8 @@ class IndexJob(api_interface.IndexJob):
         # img = 255 - thresh
         # cv2.imwrite(path.replace(self.path, "C:/Users/mueller/Desktop/output"), img)
         # img = remove_noise.process_image_for_ocr(path)
+        if self.tesseract_exe:
+            pytesseract.pytesseract.tesseract_cmd = self.tesseract_exe
         d = pytesseract.image_to_data(img, output_type=Output.DICT)
 
         for j in range(len(d["text"])):
@@ -156,7 +160,10 @@ class IndexJob(api_interface.IndexJob):
 
                         self.__add_message(
                             "Converting {} to single image files.".format(rel_path))
-                        images = convert_from_path(path, 300)
+                        if self.poppler_path:
+                            images = convert_from_path(path, 300, poppler_path=self.poppler_path)
+                        else:
+                            images = convert_from_path(path, 300)
                         page = 0
                         for image in images:
                             page = page + 1
@@ -202,7 +209,7 @@ class IndexJob(api_interface.IndexJob):
         except:
             self._stop = True
             e = sys.exc_info()[0]
-            self.__add_message("An unknown error occured : " + str(e))
+            self.__add_message("An unknown error occured: " + str(e))
             db.rollback()
 
     def random_string(self, stringLength=5):
@@ -278,7 +285,9 @@ class WheresTheFckReceipt(api_interface.WheresTheFckReceipt):
         return [i[0] for i in rows]
 
     def add_directory(self, directory) -> IndexJob:
-        return self.index_job_factory.create(directory, self.db_factory, self.app_data_dir)
+        poppler_path = self.get_setting("poppler_path")
+        tesseract_exe = self.get_setting("tesseract_exe")
+        return self.index_job_factory.create(directory, self.db_factory, self.app_data_dir, poppler_path, tesseract_exe)
 
     def remove_directory(self, directory):
         self.assert_db()
@@ -291,13 +300,14 @@ class WheresTheFckReceipt(api_interface.WheresTheFckReceipt):
         self.db.commit()
 
     def update_directory(self, directory):
-        return self.index_job_factory.create(directory, self.db_factory, self.app_data_dir)
+        return self.add_directory(directory)
 
     def reindex_directory(self, directory) -> IndexJob:
         self.remove_directory(directory)
         return self.add_directory(directory)
 
     def search(self, query: str, limit: int = None, case_sensitive: bool = False) -> List[Result]:
+        self.assert_db()
         c = self.db.cursor()
         if case_sensitive:
             query = "%" + query + "%"
@@ -323,31 +333,79 @@ class WheresTheFckReceipt(api_interface.WheresTheFckReceipt):
         # return [i[0] for i in rows]
         return result_list
 
+    def get_setting(self, key):
+        settings = self.get_settings()
+        if key in settings.keys():
+            value_ = settings[key][0]
+            type_ = settings[key][2]
+            if type_ == "int":
+                value_ = int(value_)
+            elif value_ == "":
+                return None
+            return value_
+        return None
+
+
+    def get_settings(self) -> Dict[str, Tuple[str, str, str]]:
+        self.assert_db()
+        c = self.db.cursor()
+        c.execute("select key, value, help, type from settings where hidden != 1")
+        rows = c.fetchall()
+        settings = {}
+        settings_value = {}
+        for row in rows:
+            settings[row[0]] = (row[1], row[2], row[3])
+            settings_value[row[0]] = row[1]
+        return settings
+
+    def set_settings(self, settings: Dict[str, str]):
+        self.assert_db()
+        c = self.db.cursor()
+        existing_settings = self.get_settings().keys()
+        for key, value in settings.items():
+            if key in existing_settings:
+                c.execute("update settings set value=? where key = ?", (value, key))
+            else:
+                c.execute("insert into settings (key, value) values(?, ?)", (key, value))
+        self.db.commit()
 
 class IndexJobFactory(api_interface.IndexJobFactory):
 
-    def create(self, path, db_factory: api_interface.DbFactory, app_data_dir) -> IndexJob:
-        return IndexJob(path, db_factory, app_data_dir)
+    def create(self, path, db_factory: api_interface.DbFactory, app_data_dir, poppler_path=None, tesseract_exe=None) -> IndexJob:
+        return IndexJob(path, db_factory, app_data_dir, poppler_path, tesseract_exe)
 
 
 class DbFactory(api_interface.DbFactory):
     def __init__(self, app_data_dir: str, delete_db=False):
         self.app_data_dir = app_data_dir
-        self.db_path = app_data_dir + "/db.sqlite3";
-        if delete_db and os.path.exists(self.db_path):
-            os.remove(self.db_path)
+        self.db_path = app_data_dir + "/db.sqlite3"
+        self.delete_db = delete_db
 
     def create(self) -> sqlite3.Connection:
+        if self.delete_db and os.path.exists(self.db_path):
+            os.remove(self.db_path)
         # database
         db_path = self.db_path
         if not os.path.exists(os.path.dirname(db_path)):
             os.makedirs(os.path.dirname(db_path))
-        init_database = not os.path.exists(db_path)
+        create_database = not os.path.exists(db_path)
 
         db = sqlite3.connect(db_path)
         c = db.cursor()
         c.execute("PRAGMA foreign_keys = ON")
-        if init_database:
+        if create_database:
+            c.execute("create table settings (key text primary key, value text, help text, type text not null, hidden integer not null)")
+        self.update_schema(c)
+        db.commit()
+        return db
+
+    def update_schema(self, c: sqlite3.Cursor):
+        current_schema_version = None
+        rows = c.execute("select value from settings where key = 'current_schema_version'").fetchone()
+        if rows:
+            current_schema_version = int(rows[0])
+
+        if current_schema_version is None:
             c.execute("CREATE TABLE directories ( id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE )")
             c.execute(
                 "CREATE TABLE documents ( id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE NOT NULL, directory_id INTEGER NOT NULL, FOREIGN KEY(directory_id) REFERENCES directories(id) ON DELETE CASCADE )")
@@ -355,5 +413,25 @@ class DbFactory(api_interface.DbFactory):
                 "CREATE TABLE images ( id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE NOT NULL, directory_id INTEGER NOT NULL, document_id INTEGER, doc_page INTEGER, FOREIGN KEY(directory_id) REFERENCES directories(id) ON DELETE CASCADE, FOREIGN KEY(document_id) REFERENCES documents(id) )")
             c.execute(
                 "CREATE TABLE texts ( id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, left INTEGER  NOT NULL, top INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, image_id INTEGER NOT NULL, FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE )")
-            db.commit()
-        return db
+            c.execute("insert into settings (key, value, help, type, hidden) values('current_schema_version',  '1', 'Current Schema Version', 'int', 1)")
+            c.execute("insert into settings (key, value, help, type, hidden) values('tesseract_exe', null, 'Path to Tesseract Exe', 'file', 0)")
+            c.execute("insert into settings (key, value, help, type, hidden) values('pdftopmm_exe', null, 'Path to Poppler Exe', 'file', 0)")
+            self.update_schema(c)
+
+        elif current_schema_version == 1:
+            c.execute("insert into settings (key, value, help, type, hidden) values('default_limit', 0, 'The default limit for the search', 'int', 0)")
+            c.execute("update settings set value=2 where key = 'current_schema_version'")
+            self.update_schema(c)
+
+        elif current_schema_version == 2:
+            c.execute("insert into settings (key, value, help, type, hidden) values('poppler_path', 0, 'The path for poppler', 'dir', 0)")
+            c.execute("delete from settings where key = 'pdftopmm_exe'")
+            c.execute("update settings set value=3 where key = 'current_schema_version'")
+            self.update_schema(c)
+
+        elif current_schema_version == 3:
+            c.execute("update settings set value=NULL where key = 'poppler_path'")
+            c.execute("update settings set value=4 where key = 'current_schema_version'")
+            self.update_schema(c)
+
+

@@ -1,5 +1,5 @@
 import abc
-from typing import List
+from typing import List, Dict, Tuple
 import numpy as np
 import sqlite3
 
@@ -34,6 +34,13 @@ class IndexJob:
     def is_finished(self) -> bool:
         return False
 
+    @abc.abstractmethod
+    def get_settings(self) -> Dict[str, Tuple[str, str, str]]:
+        return None
+
+    @abc.abstractmethod
+    def set_settings(self, settings: Dict[str, str]):
+        return None
 
 class Result:
     @abc.abstractmethod
@@ -93,7 +100,7 @@ class DbFactory:
 class IndexJobFactory:
 
     @abc.abstractmethod
-    def create(self, path: str, db_factory: DbFactory, app_data_dir: str) -> IndexJob:
+    def create(self, path: str, db_factory: DbFactory, app_data_dir: str, poppler_path=None, tesseract_exe=None) -> IndexJob:
         return None
 
 

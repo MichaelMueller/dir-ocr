@@ -110,7 +110,7 @@ class Indexer(QWidget):
         self.index_progress.setEnabled(True)
         self.index_progress.reset()
         self.stop_index.setEnabled(True)
-        #self.index_console.setEnabled(True)
+        # self.index_console.setEnabled(True)
         self.index_console.clear()
         # start job
         self.stop_index.setEnabled(True)
@@ -140,7 +140,7 @@ class Indexer(QWidget):
         self.file_list_action_bar_widget.setEnabled(len(self.directories.selectedItems()) > 0)
         self.index_progress.setEnabled(False)
         self.stop_index.setEnabled(False)
-        #self.index_console.setEnabled(False)
+        # self.index_console.setEnabled(False)
         self.index_job = None
 
     def index_job_timer_timeout(self):
@@ -168,7 +168,7 @@ class SearcherWidget(QWidget):
         self.query = QLineEdit()
         self.query.returnPressed.connect(self.search_button_clicked)
         self.limit_box = QSpinBox()
-        self.limit_box.setValue(0)
+        self.limit_box.setValue(int(self.wheres_the_fck_receipt.get_settings()["default_limit"][0]))
         self.cs_box = QCheckBox("Case Sensitive")
         search_button = QPushButton('Search')
         search_button.clicked.connect(self.search_button_clicked)
@@ -241,7 +241,8 @@ class SearcherWidget(QWidget):
         self.preview.setPixmap(QPixmap(self.current_preview_image).scaled(w, h, Qt.KeepAspectRatio))
 
     def search_button_clicked(self):
-        self.results = self.wheres_the_fck_receipt.search(self.query.text(), self.limit_box.value(), self.cs_box.isChecked())
+        self.results = self.wheres_the_fck_receipt.search(self.query.text(), self.limit_box.value(),
+                                                          self.cs_box.isChecked())
         self.match_list.clear()
         self.match_list.setColumnCount(3)
         self.match_list.setHorizontalHeaderLabels(['Text', 'Path', 'Page'])
@@ -259,6 +260,54 @@ class SearcherWidget(QWidget):
         self.query.selectAll()
 
 
+class SettingsWidget(QTableWidget):
+    def __init__(self, wheres_the_fck_receipt: api_interface.WheresTheFckReceipt, parent=None):
+        QTableWidget.__init__(self, parent)
+
+        self.wheres_the_fck_receipt = wheres_the_fck_receipt
+        # settings table
+        self.setShowGrid(True)
+        #self.setSelectionMode(QAbstractItemView.SingleSelection)
+        #self.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.setColumnCount(3)
+        self.setHorizontalHeaderLabels(['Key', 'Value', 'Help'])
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
+
+        row = 0
+        settings = wheres_the_fck_receipt.get_settings()
+        for key, value_help_type in settings.items():
+            key_item = QTableWidgetItem(key)
+            key_item.setFlags(key_item.flags() ^ Qt.ItemIsEditable)
+
+            value_ = value_help_type[0]
+            type_ = value_help_type[2]
+            value_item = QTableWidgetItem(value_)
+            value_item.setData(Qt.UserRole, type_)
+            # value_item.setFlags(value_item.flags() & Qt.ItemIsEditable)
+
+            help_ = value_help_type[1]
+            help_item = QTableWidgetItem(help_)
+            help_item.setFlags(help_item.flags() ^ Qt.ItemIsEditable)
+
+            self.insertRow(row)
+            self.setItem(row, 0, key_item)
+            self.setItem(row, 1, value_item)
+            self.setItem(row, 2, help_item)
+            row = row + 1
+
+        self.cellChanged.connect(self.on_cell_changed)
+
+    def on_cell_changed(self):
+        settings = {}
+        for row in range(self.rowCount()):
+            # item(row, 0) Returns the item for the given row and column if one has been set; otherwise returns nullptr.
+            key_ = self.item(row, 0).text()
+            value_ = self.item(row, 1).text()
+            settings[key_] = value_
+        self.wheres_the_fck_receipt.set_settings(settings)
+
 class WheresTheFckReceipt(QMainWindow):
 
     def __init__(self, wheres_the_fck_receipt: api_interface.WheresTheFckReceipt, parent=None):
@@ -267,6 +316,7 @@ class WheresTheFckReceipt(QMainWindow):
 
         # tab widget
         self.tab_widget = QTabWidget()
+        self.tab_widget.addTab(SettingsWidget(wheres_the_fck_receipt), "Settings")
         self.tab_widget.addTab(Indexer(wheres_the_fck_receipt), "Indexer")
         self.tab_widget.addTab(SearcherWidget(wheres_the_fck_receipt), "Searcher")
 
@@ -276,11 +326,6 @@ class WheresTheFckReceipt(QMainWindow):
         app_name = app_context.build_settings['app_name']
         window_title = app_name + " v" + version
 
-        # get settings
-        QSettings.setDefaultFormat(QSettings.IniFormat)
-        QCoreApplication.setApplicationName(app_name)
-
-        settings = QSettings()
         # build main window
         self.setWindowTitle(window_title)
         self.setCentralWidget(self.tab_widget)
